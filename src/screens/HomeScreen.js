@@ -1,13 +1,31 @@
-import React from 'react';
-import { View, Text, FlatList, TouchableOpacity, StyleSheet, SafeAreaView } from 'react-native';
+import React, { useState, useEffect } from 'react'; // Added useEffect/useState
+import { View, Text, FlatList, TouchableOpacity, StyleSheet, SafeAreaView, ActivityIndicator } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
-import { THEME } from '../theme'; // Importing your new theme file
+import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
+import { db } from '../../firebaseConfig';
+import { THEME } from '../theme';
 
 export default function HomeScreen({ navigation }) {
-  // MVP: Hardcoded list for now. Later this comes from Firebase.
-  const games = [
-    { id: 'super_bowl_2026', name: 'LBC Silver 12U', date: 'Feb 9, 2026', type: 'Super Bowl' }
-  ];
+  const [games, setGames] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    // Listen to the "squares_pool" collection in real-time
+    // Note: If you don't have a 'createdAt' field on old data, remove the orderBy
+    const q = query(collection(db, "squares_pool")); 
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const loadedGames = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      console.log('HomeScreen loadedGames:', loadedGames);
+      setGames(loadedGames);
+      setLoading(false);
+    });
+
+    return () => unsubscribe();
+  }, []);
   
   return (
     <SafeAreaView style={styles.container}>
@@ -15,25 +33,47 @@ export default function HomeScreen({ navigation }) {
         <Text style={styles.headerTitle}>My Pools</Text>
       </View>
       
-      <FlatList 
-        data={games} 
-        keyExtractor={item => item.id} 
-        renderItem={({ item }) => (
-          <TouchableOpacity 
-            style={styles.gameCard} 
-            onPress={() => navigation.navigate('Game', { gameId: item.id })}
-          >
-            <View style={styles.gameIcon}>
-                <Text style={{fontSize: 24}}>🏈</Text>
-            </View>
-            <View style={{flex: 1}}>
-              <Text style={styles.gameTitle}>{item.name}</Text>
-              <Text style={styles.gameDate}>{item.type} • {item.date}</Text>
-            </View>
-            <Text style={{color: '#666', fontSize: 20}}>›</Text>
-          </TouchableOpacity>
-        )}
-      />
+      {loading ? (
+        <ActivityIndicator size="large" color={THEME.primary} style={{marginTop: 50}} />
+      ) : (
+        <FlatList 
+            data={games} 
+            keyExtractor={item => item.id} 
+            renderItem={({ item }) => (
+            <TouchableOpacity 
+                style={styles.gameCard} 
+                onPress={() => navigation.navigate('Game', { gameId: item.id })}
+            >
+                <View style={styles.gameIcon}>
+                    <Text style={{fontSize: 24}}>🏈</Text>
+                </View>
+                <View style={{flex: 1}}>
+                <Text style={styles.gameTitle}>{item.name ?? item.id ?? "Unnamed Pool"}</Text>
+                <Text style={styles.gameDate}>
+                    {item.topTeam} vs {item.leftTeam}
+                </Text>
+                </View>
+                <Text style={{color: '#666', fontSize: 20}}>›</Text>
+            </TouchableOpacity>
+            )}
+            // Add a placeholder if list is empty
+            ListEmptyComponent={
+                <Text style={{color: '#666', textAlign: 'center', marginTop: 20}}>
+                    No pools yet. Tap + to start one!
+                </Text>
+            }
+        />
+      )}
+
+      {/* Floating Action Button */}
+      <TouchableOpacity 
+        style={styles.fab} 
+        onPress={() => navigation.navigate('Create')}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.fabText}>+</Text>
+      </TouchableOpacity>
+
       <StatusBar style="light" />
     </SafeAreaView>
   );
@@ -53,4 +93,11 @@ const styles = StyleSheet.create({
   },
   gameTitle: { color: THEME.text, fontSize: 18, fontWeight: 'bold' },
   gameDate: { color: '#888', fontSize: 14, marginTop: 4 },
+  fab: {
+    position: 'absolute', bottom: 30, right: 20, width: 60, height: 60,
+    borderRadius: 30, backgroundColor: THEME.primary, justifyContent: 'center',
+    alignItems: 'center', elevation: 5, shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 4, zIndex: 100,
+  },
+  fabText: { color: '#fff', fontSize: 32, fontWeight: 'bold', marginTop: -3 }
 });
