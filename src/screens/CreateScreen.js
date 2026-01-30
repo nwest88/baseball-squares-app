@@ -1,19 +1,26 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, SafeAreaView, Alert, TouchableOpacity, ActivityIndicator } from 'react-native';
+import { View, Text, TextInput, Button, StyleSheet, SafeAreaView, Alert, TouchableOpacity, ActivityIndicator, Modal, FlatList } from 'react-native';
 import { doc, setDoc } from 'firebase/firestore'; 
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme';
 
 const generateGameId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
 
+// DEFINING THE OPTIONS
+const GRID_OPTIONS = [
+    { id: 'std', label: 'Standard (100 Squares)', cols: 10, rows: 10, detail: '10x10 Grid • 0-9 Both Axes' },
+    { id: 'half', label: 'Half Board (50 Squares)', cols: 10, rows: 5, detail: '10x5 Grid • 0-9 Top • 0-4 Side' },
+    { id: 'qtr', label: 'Quick (25 Squares)', cols: 5, rows: 5, detail: '5x5 Grid • 0-4 Both Axes' },
+];
+
 export default function CreateScreen({ navigation }) {
   const [name, setName] = useState('');
   const [topTeam, setTopTeam] = useState('');
   const [leftTeam, setLeftTeam] = useState('');
   
-  // NEW: State for Grid Size (Default to 10 for 100 squares)
-  // Options: 10 (100 sq), 5 (25 sq)
-  const [gridSize, setGridSize] = useState(10); 
+  // SELECTION STATE
+  const [selectedOption, setSelectedOption] = useState(GRID_OPTIONS[0]);
+  const [showDropdown, setShowDropdown] = useState(false);
   
   const [loading, setLoading] = useState(false);
 
@@ -34,12 +41,13 @@ export default function CreateScreen({ navigation }) {
         leftTeam: leftTeam,
         createdAt: new Date(),
         
-        // NEW: Save the Grid Size
-        gridSize: gridSize, 
+        // SAVE DIMENSIONS
+        gridCols: selectedOption.cols,
+        gridRows: selectedOption.rows,
         
-        // DYNAMIC: Initialize Axis based on size (10 slots or 5 slots)
-        topAxis: Array(gridSize).fill("?"), 
-        leftAxis: Array(gridSize).fill("?"),
+        // INITIALIZE AXES based on dimensions
+        topAxis: Array(selectedOption.cols).fill("?"), 
+        leftAxis: Array(selectedOption.rows).fill("?"),
         
         scores: {
             q1: { top: '', left: '' },
@@ -58,17 +66,6 @@ export default function CreateScreen({ navigation }) {
     }
   };
 
-  // Helper Component for Size Buttons
-  const SizeOption = ({ size, label, squares }) => (
-    <TouchableOpacity 
-        style={[styles.sizeBtn, gridSize === size && styles.sizeBtnActive]} 
-        onPress={() => setGridSize(size)}
-    >
-        <Text style={[styles.sizeBtnText, gridSize === size && styles.sizeBtnTextActive]}>{squares}</Text>
-        <Text style={[styles.sizeLabel, gridSize === size && styles.sizeLabelActive]}>{label}</Text>
-    </TouchableOpacity>
-  );
-
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.content}>
@@ -78,9 +75,7 @@ export default function CreateScreen({ navigation }) {
         <View style={styles.formGroup}>
             <Text style={styles.label}>Pool Name</Text>
             <TextInput 
-                style={styles.input} 
-                placeholder="e.g. Super Bowl Party" 
-                placeholderTextColor="#666"
+                style={styles.input} placeholder="e.g. Super Bowl Party" placeholderTextColor="#666"
                 value={name} onChangeText={setName}
             />
         </View>
@@ -103,13 +98,19 @@ export default function CreateScreen({ navigation }) {
             </View>
         </View>
 
-        {/* 3. NEW: Grid Size Selector */}
+        {/* 3. DROPDOWN SELECTOR */}
         <View style={styles.formGroup}>
-            <Text style={styles.label}>Grid Size</Text>
-            <View style={styles.sizeRow}>
-                <SizeOption size={10} squares="100" label="Standard (10x10)" />
-                <SizeOption size={5} squares="25" label="Quick (5x5)" />
-            </View>
+            <Text style={styles.label}>Grid Format</Text>
+            <TouchableOpacity 
+                style={styles.dropdownButton} 
+                onPress={() => setShowDropdown(true)}
+            >
+                <View>
+                    <Text style={styles.dropdownText}>{selectedOption.label}</Text>
+                    <Text style={styles.dropdownDetail}>{selectedOption.detail}</Text>
+                </View>
+                <Text style={styles.dropdownArrow}>▼</Text>
+            </TouchableOpacity>
         </View>
 
         <View style={styles.spacer} />
@@ -123,6 +124,35 @@ export default function CreateScreen({ navigation }) {
         )}
         
         <Button title="Cancel" color="#666" onPress={() => navigation.goBack()} />
+
+        {/* 4. MODAL FOR DROPDOWN OPTIONS */}
+        <Modal visible={showDropdown} transparent={true} animationType="fade">
+            <TouchableOpacity 
+                style={styles.modalOverlay} 
+                activeOpacity={1} 
+                onPress={() => setShowDropdown(false)}
+            >
+                <View style={styles.dropdownList}>
+                    <Text style={styles.dropdownHeader}>Select Size</Text>
+                    {GRID_OPTIONS.map((option) => (
+                        <TouchableOpacity 
+                            key={option.id} 
+                            style={styles.optionItem}
+                            onPress={() => {
+                                setSelectedOption(option);
+                                setShowDropdown(false);
+                            }}
+                        >
+                            <Text style={[styles.optionText, selectedOption.id === option.id && styles.optionTextActive]}>
+                                {option.label}
+                            </Text>
+                            <Text style={styles.optionDetail}>{option.detail}</Text>
+                        </TouchableOpacity>
+                    ))}
+                </View>
+            </TouchableOpacity>
+        </Modal>
+
       </View>
     </SafeAreaView>
   );
@@ -139,16 +169,51 @@ const styles = StyleSheet.create({
   spacer: { height: 10 },
   createBtn: { backgroundColor: THEME.primary, padding: 15, borderRadius: 8, alignItems: 'center', marginBottom: 15 },
   createBtnText: { color: '#fff', fontWeight: 'bold', fontSize: 18 },
-  
-  // NEW STYLES FOR SIZE SELECTOR
-  sizeRow: { flexDirection: 'row', justifyContent: 'space-between' },
-  sizeBtn: { 
-    flex: 1, backgroundColor: THEME.card, padding: 15, borderRadius: 8, 
-    borderWidth: 1, borderColor: THEME.border, alignItems: 'center', marginHorizontal: 5 
+
+  // DROPDOWN STYLES
+  dropdownButton: {
+      backgroundColor: THEME.card,
+      padding: 15,
+      borderRadius: 8,
+      borderWidth: 1,
+      borderColor: THEME.border,
+      flexDirection: 'row',
+      justifyContent: 'space-between',
+      alignItems: 'center'
   },
-  sizeBtnActive: { backgroundColor: THEME.primary, borderColor: THEME.primary },
-  sizeBtnText: { color: '#fff', fontSize: 24, fontWeight: 'bold' },
-  sizeBtnTextActive: { color: '#fff' },
-  sizeLabel: { color: '#888', fontSize: 12, marginTop: 4 },
-  sizeLabelActive: { color: 'rgba(255,255,255,0.8)' }
+  dropdownText: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
+  dropdownDetail: { color: '#888', fontSize: 12, marginTop: 2 },
+  dropdownArrow: { color: THEME.primary, fontSize: 18 },
+  
+  // MODAL STYLES
+  modalOverlay: {
+      flex: 1,
+      backgroundColor: 'rgba(0,0,0,0.8)',
+      justifyContent: 'center',
+      padding: 20
+  },
+  dropdownList: {
+      backgroundColor: THEME.card,
+      borderRadius: 12,
+      borderWidth: 1,
+      borderColor: THEME.primary,
+      padding: 10
+  },
+  dropdownHeader: {
+      color: THEME.gold,
+      fontWeight: 'bold',
+      padding: 15,
+      textTransform: 'uppercase',
+      fontSize: 12,
+      borderBottomWidth: 1,
+      borderBottomColor: '#333'
+  },
+  optionItem: {
+      padding: 15,
+      borderBottomWidth: 1,
+      borderBottomColor: '#333'
+  },
+  optionText: { color: '#fff', fontSize: 16 },
+  optionTextActive: { color: THEME.primary, fontWeight: 'bold' },
+  optionDetail: { color: '#666', fontSize: 12, marginTop: 2 }
 });
