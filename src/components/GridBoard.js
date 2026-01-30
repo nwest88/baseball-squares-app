@@ -10,21 +10,32 @@ export default function GridBoard({
   onSquarePress 
 }) {
 
-  // DYNAMIC SIZE LOGIC:
-  // If axis has 5 items, use big squares. If 10, use standard.
-  const gridSize = topAxis.length || 10;
-  const CELL_SIZE = gridSize === 5 ? 65 : 45; // Bigger squares for 5x5 games!
+  // DYNAMIC RECTANGLE LOGIC:
+  // Count columns and rows separately to support 10x5 grids
+  const colCount = topAxis.length || 10;
+  const rowCount = leftAxis.length || 10;
 
-  const getInitials = (name) => {
+  // If it's a small grid (5x5), make cells bigger. Otherwise standard size.
+  const CELL_SIZE = colCount <= 5 ? 65 : 45; 
+
+  const getInitials = (ownerData) => {
+    if (!ownerData) return "";
+  // Check if it's an object (New Format) or String (Old Format)
+    const name = (typeof ownerData === 'object' && ownerData !== null) 
+                 ? ownerData.name 
+                 : ownerData;
+
     if (!name) return "";
+    
     const parts = name.trim().split(" ");
     return parts.length > 1 
       ? (parts[0][0] + parts[1][0]).toUpperCase() 
       : name.substring(0, 2).toUpperCase();
   };
 
-  // Create array [0, 1, 2... n] based on grid size
-  const indices = Array.from({ length: gridSize }, (_, i) => i);
+  // Create separate arrays for iteration
+  const colIndices = Array.from({ length: colCount }, (_, i) => i);
+  const rowIndices = Array.from({ length: rowCount }, (_, i) => i);
 
   return (
     <View style={styles.container}>
@@ -37,7 +48,7 @@ export default function GridBoard({
             <View style={[styles.cornerCell, {width: CELL_SIZE, height: CELL_SIZE}]}>
                <Text style={{color: '#444', fontSize: 10}}>Q/S</Text>
             </View>
-            {indices.map((r) => {
+            {rowIndices.map((r) => {
               const num = leftAxis[r] !== undefined ? leftAxis[r] : '?';
               const isWinningRow = winningLoc && winningLoc.row === r;
               return (
@@ -53,7 +64,7 @@ export default function GridBoard({
             <View>
               {/* TOP HEADER */}
               <View style={{ flexDirection: 'row' }}>
-                {indices.map((i) => {
+                {colIndices.map((i) => {
                    const num = topAxis[i] !== undefined ? topAxis[i] : '?';
                    const isWinningCol = winningLoc && winningLoc.col === i;
                    return (
@@ -65,9 +76,9 @@ export default function GridBoard({
               </View>
 
               {/* GRID ROWS */}
-              {indices.map((r) => (
+              {rowIndices.map((r) => (
                 <View key={`row-${r}`} style={{ flexDirection: 'row' }}>
-                  {indices.map((c) => {
+                  {colIndices.map((c) => {
                     const key = `${r}-${c}`;
                     const owner = gridData[key];
                     const initials = getInitials(owner);
@@ -82,7 +93,7 @@ export default function GridBoard({
                         onPress={() => onSquarePress && onSquarePress({ row: r, col: c, owner: owner || null })}
                         style={[
                           styles.cell,
-                          {width: CELL_SIZE, height: CELL_SIZE}, // Dynamic Size
+                          {width: CELL_SIZE, height: CELL_SIZE},
                           owner ? styles.takenCell : styles.freeCell,
                           (isWinningRow || isWinningCol) && styles.highlightCell,
                           isWinner && styles.winningCell
@@ -104,6 +115,7 @@ export default function GridBoard({
   );
 }
 
+// Styles are unchanged
 const styles = StyleSheet.create({
   container: { flex: 1 }, 
   cornerCell: { justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderBottomWidth: 1, borderColor: '#333' },
