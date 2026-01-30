@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView } from 'react-native';
-import { doc, onSnapshot, setDoc } from 'firebase/firestore';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator } from 'react-native';
+import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
 import { db, auth } from '../../firebaseConfig'; 
@@ -21,18 +21,26 @@ export default function GameScreen({ route, navigation }) {
   const [user, setUser] = useState(null);
   const [activeQuarter, setActiveQuarter] = useState('q1');
   const [scores, setScores] = useState(DEFAULT_SCORES);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(""); 
   
-  // ADMIN STATE
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
+  // ADMIN & MODAL STATES
   const [showAdminModal, setShowAdminModal] = useState(false);
-  
-  // MANUAL ASSIGNMENT STATE
   const [showEditModal, setShowEditModal] = useState(false);
-  const [editingSquare, setEditingSquare] = useState(null); // { row, col }
+  
+  // NEW: READ-ONLY DETAILS MODAL
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [selectedDetails, setSelectedDetails] = useState(null);
+
+  // EDIT STATE
+  const [editingSquare, setEditingSquare] = useState(null); 
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editNote, setEditNote] = useState("");
+
+  // ADMIN LOGIN INPUTS
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   useEffect(() => {
     const unsubDocs = onSnapshot(doc(db, "squares_pool", gameId), (docSnap) => {
@@ -40,8 +48,16 @@ export default function GameScreen({ route, navigation }) {
         const data = docSnap.data();
         setGridData(data);
         if (data.scores) setScores(prev => ({ ...prev, ...data.scores }));
+        setLoading(false); 
+      } else {
+        setLoadError(`Game ID '${gameId}' not found.`);
+        setLoading(false);
       }
+    }, (error) => {
+        setLoadError(error.message);
+        setLoading(false);
     });
+
     const unsubAuth = onAuthStateChanged(auth, u => setUser(u));
     return () => { unsubDocs(); unsubAuth(); };
   }, [gameId]);
@@ -49,71 +65,91 @@ export default function GameScreen({ route, navigation }) {
   // --- ACTIONS ---
 
   const handleSquarePress = (data) => {
-    // data = { row, col, owner (string or object) }
-    
-    // Check Assignment Mode
-    const mode = gridData.assignmentMode || 'manual'; // Default to manual for old games
+    // 1. IS THE SQUARE TAKEN? -> SHOW DETAILS POPUP
+    if (data.owner) {
+        const topNum = gridData.topAxis ? gridData.topAxis[data.col] : '?';
+        const leftNum = gridData.leftAxis ? gridData.leftAxis[data.row] : '?';
+        
+        const ownerName = (typeof data.owner === 'object') ? data.owner.name : data.owner;
+        const ownerNote = (typeof data.owner === 'object') ? data.owner.note : "";
+        const ownerEmail = (typeof data.owner === 'object') ? data.owner.email : "";
+
+        setSelectedDetails({
+            name: ownerName,
+            note: ownerNote,
+            email: ownerEmail,
+            topNum: topNum,
+            leftNum: leftNum,
+            row: data.row,
+            col: data.col
+        });
+        setShowDetailsModal(true);
+        return;
+    }
+
+    // 2. IS IT EMPTY? -> CHECK MODE
+    const mode = gridData.assignmentMode || 'manual'; 
 
     if (mode === 'manual') {
-        // OPEN EDIT MODAL
-        setEditingSquare({ row: data.row, col: data.col });
-        
-        // Pre-fill if owner exists
-        if (data.owner) {
-            if (typeof data.owner === 'object') {
-                setEditName(data.owner.name || "");
-                setEditEmail(data.owner.email || "");
-                setEditNote(data.owner.note || "");
-            } else {
-                setEditName(data.owner); // Old string format
-                setEditEmail("");
-                setEditNote("");
-            }
-        } else {
-            // Empty Square
-            setEditName("");
-            setEditEmail("");
-            setEditNote("");
-        }
-        setShowEditModal(true);
+        openEditModal(data.row, data.col);
     } else {
-        // Auto Mode (Coming in Sprint 2)
-        Alert.alert("Auto Mode", "Use the 'Add Player' button to randomly assign squares.");
+        Alert.alert("Auto Mode", "Use the 'People' button to randomly assign squares.");
     }
+  };
+
+  // Helper to open the edit modal (Used by Empty Click OR "Edit" button in Details)
+  const openEditModal = (row, col, existingData = null) => {
+    setEditingSquare({ row, col });
+    
+    if (existingData) {
+        setEditName(existingData.name || "");
+        setEditEmail(existingData.email || "");
+        setEditNote(existingData.note || "");
+    } else {
+        setEditName(""); setEditEmail(""); setEditNote("");
+    }
+    
+    setShowDetailsModal(false); // Close details if open
+    setShowEditModal(true);     // Open edit
   };
 
   const saveSquareInfo = async () => {
     if (!editingSquare) return;
-    
     const key = `${editingSquare.row}-${editingSquare.col}`;
-    
-    // Save as Object
-    const newOwnerData = {
-        name: editName,
-        email: editEmail,
-        note: editNote
-    };
-
-    // If name is empty, clear the square (delete field logic, or just null)
-    // For simplicity, we just set it to null if name is empty
+    const newOwnerData = { name: editName, email: editEmail, note: editNote };
     const valueToSave = editName.trim() === "" ? null : newOwnerData;
 
     try {
-        await setDoc(doc(db, "squares_pool", gameId), {
-            [key]: valueToSave
-        }, { merge: true });
-        
+        await setDoc(doc(db, "squares_pool", gameId), { [key]: valueToSave }, { merge: true });
         setShowEditModal(false);
     } catch (e) {
         Alert.alert("Error", "Could not save square.");
     }
   };
 
+  const handleRandomizeNumbers = async () => {
+      const cols = gridData.gridCols || 10;
+      const rows = gridData.gridRows || 10;
+      const generateShuffled = (size) => {
+          const arr = Array.from({ length: size }, (_, i) => i);
+          return arr.sort(() => Math.random() - 0.5);
+      };
+      try {
+          await updateDoc(doc(db, "squares_pool", gameId), {
+              topAxis: generateShuffled(cols),
+              leftAxis: generateShuffled(rows)
+          });
+          Alert.alert("Numbers Randomized!", "The grid axes have been updated.");
+      } catch (e) {
+          Alert.alert("Error", e.message);
+      }
+  };
+
+  // ... (Calculations for Winning Coords & Team Colors - Same as before)
   const getWinningCoords = () => {
     if (!gridData.topAxis || !gridData.leftAxis) return null;
     const currentScores = scores[activeQuarter];
-    if (!currentScores) return null;
-    if (currentScores.top === '' && currentScores.left === '') return null;
+    if (!currentScores || (currentScores.top === '' && currentScores.left === '')) return null;
 
     const tVal = currentScores.top === '' ? '0' : currentScores.top;
     const lVal = currentScores.left === '' ? '0' : currentScores.left;
@@ -124,11 +160,8 @@ export default function GameScreen({ route, navigation }) {
 
     const colIndex = gridData.topAxis.indexOf(tDigit);
     const rowIndex = gridData.leftAxis.indexOf(lDigit);
-
-    if (colIndex === -1 || rowIndex === -1) return null;
-    return { row: rowIndex, col: colIndex };
+    return (colIndex === -1 || rowIndex === -1) ? null : { row: rowIndex, col: colIndex };
   };
-
   const winningLoc = getWinningCoords();
 
   const getTeamColor = (name) => {
@@ -142,7 +175,7 @@ export default function GameScreen({ route, navigation }) {
   const handleLogin = async () => {
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      setEmail(""); setPassword(""); setShowAdminModal(false);
+      setEmail(""); setPassword(""); 
     } catch (e) { Alert.alert("Error", e.message); }
   };
 
@@ -155,6 +188,27 @@ export default function GameScreen({ route, navigation }) {
     setScores(prev => ({ ...prev, [q]: { ...prev[q], [team]: val } }));
   };
 
+  // --- RENDER ---
+
+  if (loading || (!gridData.id && !loadError)) {
+    return (
+        <SafeAreaView style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
+            <ActivityIndicator size="large" color={THEME.primary} />
+            <Text style={{color: '#666', marginTop: 10, fontSize: 16}}>Finding Pool...</Text>
+        </SafeAreaView>
+    );
+  }
+
+  if (loadError) {
+      return (
+        <SafeAreaView style={[styles.container, {justifyContent: 'center', alignItems: 'center', padding: 20}]}>
+            <Text style={{color: 'red', fontSize: 18, fontWeight: 'bold'}}>ERROR</Text>
+            <Text style={{color: '#fff', textAlign: 'center'}}>{loadError}</Text>
+            <Button title="Go Home" color="#666" onPress={() => navigation.navigate('Home')} />
+        </SafeAreaView>
+      );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       
@@ -163,7 +217,6 @@ export default function GameScreen({ route, navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={{paddingRight: 15}}>
           <Text style={{color: '#666', fontSize: 18}}>‹</Text>
         </TouchableOpacity>
-        
         <View style={{flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center'}}>
            <View style={{alignItems: 'center'}}>
               <Text style={[styles.teamBadgeText, {color: getTeamColor(gridData.leftTeam)}]}>{gridData.leftTeam || "HOME"}</Text>
@@ -195,58 +248,86 @@ export default function GameScreen({ route, navigation }) {
                    {gridData.topTeam?.toUpperCase() || "AWAY"}
                </Text>
           </View>
-          
           <View style={{flexDirection: 'row', flex: 1}}>
                <View style={styles.leftLabelContainer}>
                   <Text numberOfLines={1} style={[styles.teamLabelLeft, {color: getTeamColor(gridData.leftTeam)}]}>
                       {gridData.leftTeam?.toUpperCase() || "HOME"}
                   </Text>
                </View>
-               
                <GridBoard 
                   gridData={gridData}
                   topAxis={gridData.topAxis}
                   leftAxis={gridData.leftAxis}
                   winningLoc={winningLoc}
-                  onSquarePress={handleSquarePress} // <--- Pass Handler
+                  onSquarePress={handleSquarePress} 
                />
           </View>
         </View>
       </View>
 
-      {/* 4. ADMIN BUTTON */}
-      <TouchableOpacity style={styles.fab} onPress={() => setShowAdminModal(true)}>
+      {/* 4. FABs */}
+      <TouchableOpacity style={styles.fabRight} onPress={() => setShowAdminModal(true)}>
         <Text style={{fontSize: 20}}>⚙️</Text>
       </TouchableOpacity>
-      
-      {/* 5. MANUAL EDIT MODAL */}
+      <TouchableOpacity style={styles.fabLeft} onPress={() => navigation.navigate('PlayerManager', { gameId: gameId })}>
+        <Text style={{fontSize: 20}}>👥</Text>
+      </TouchableOpacity>
+
+      {/* ================= MODALS ================= */}
+
+      {/* A. SQUARE DETAILS (READ ONLY) */}
+      <Modal visible={showDetailsModal} transparent={true} animationType="fade">
+        <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDetailsModal(false)}>
+            <View style={styles.detailCard}>
+                 <Text style={styles.detailTitle}>Square Details</Text>
+                 
+                 {/* Numbers Visual */}
+                 <View style={styles.ticketContainer}>
+                    <View style={styles.ticketColumn}>
+                        <Text style={styles.ticketLabel}>AWAY</Text>
+                        <Text style={styles.ticketNumber}>{selectedDetails?.topNum}</Text>
+                    </View>
+                    <View style={styles.ticketDivider} />
+                    <View style={styles.ticketColumn}>
+                        <Text style={styles.ticketLabel}>HOME</Text>
+                        <Text style={styles.ticketNumber}>{selectedDetails?.leftNum}</Text>
+                    </View>
+                 </View>
+
+                 <Text style={styles.ownerName}>{selectedDetails?.name}</Text>
+                 <Text style={styles.ownerNote}>{selectedDetails?.note || "No notes"}</Text>
+                 
+                 <View style={{height: 20}} />
+                 
+                 {/* Show Edit Button ONLY if Manual Mode */}
+                 {gridData.assignmentMode === 'manual' && (
+                     <Button 
+                        title="Edit Square" 
+                        color={THEME.accent} 
+                        onPress={() => openEditModal(selectedDetails.row, selectedDetails.col, selectedDetails)} 
+                     />
+                 )}
+                 <View style={{height: 10}} />
+                 <Button title="Close" color="#666" onPress={() => setShowDetailsModal(false)} />
+            </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* B. MANUAL EDIT FORM */}
       <Modal visible={showEditModal} transparent={true} animationType="slide">
         <View style={styles.modalOverlay}>
             <View style={styles.detailCard}>
                 <Text style={styles.detailTitle}>Edit Square</Text>
-                
-                <TextInput 
-                    style={styles.modalInput} placeholder="Player Name" placeholderTextColor="#666"
-                    value={editName} onChangeText={setEditName}
-                />
-                <TextInput 
-                    style={styles.modalInput} placeholder="Email (Optional)" placeholderTextColor="#666"
-                    value={editEmail} onChangeText={setEditEmail} autoCapitalize="none" keyboardType="email-address"
-                />
-                <TextInput 
-                    style={styles.modalInput} placeholder="Note (e.g. Paid)" placeholderTextColor="#666"
-                    value={editNote} onChangeText={setEditNote}
-                />
-
-                <View style={{height: 10}} />
-                <Button title="Save Square" color={THEME.primary} onPress={saveSquareInfo} />
-                <View style={{height: 10}} />
-                <Button title="Cancel" color="#666" onPress={() => setShowEditModal(false)} />
+                <TextInput style={styles.modalInput} placeholder="Player Name" placeholderTextColor="#666" value={editName} onChangeText={setEditName} />
+                <TextInput style={styles.modalInput} placeholder="Email" placeholderTextColor="#666" value={editEmail} onChangeText={setEditEmail} />
+                <TextInput style={styles.modalInput} placeholder="Note" placeholderTextColor="#666" value={editNote} onChangeText={setEditNote} />
+                <View style={{height: 10}} /><Button title="Save" color={THEME.primary} onPress={saveSquareInfo} />
+                <View style={{height: 10}} /><Button title="Cancel" color="#666" onPress={() => setShowEditModal(false)} />
             </View>
         </View>
       </Modal>
 
-      {/* 6. ADMIN MODAL */}
+      {/* C. ADMIN CONTROLS */}
       <Modal visible={showAdminModal} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.detailCard}>
@@ -256,13 +337,11 @@ export default function GameScreen({ route, navigation }) {
                  <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.modalInput} placeholderTextColor="#666" autoCapitalize="none"/>
                  <TextInput placeholder="Password" value={password} onChangeText={setPassword} style={styles.modalInput} secureTextEntry placeholderTextColor="#666"/>
                  <Button title="Login" color={THEME.accent} onPress={handleLogin} />
-                 <View style={{marginTop: 10}}>
-                     <Button title="Cancel" color="#666" onPress={() => setShowAdminModal(false)} />
-                 </View>
+                 <View style={{marginTop: 15}}><Button title="Close" color="#666" onPress={() => setShowAdminModal(false)} /></View>
                </View>
             ) : (
               <ScrollView style={{width: '100%'}}>
-                 <Text style={styles.sectionHeader}>Scores</Text>
+                 <Text style={styles.sectionHeader}>Game Scores</Text>
                  {['q1','q2','q3','final'].map(q => (
                    <View key={q} style={styles.scoreRow}>
                       <Text style={styles.scoreLabel}>{q.toUpperCase()}</Text>
@@ -271,9 +350,14 @@ export default function GameScreen({ route, navigation }) {
                    </View>
                  ))}
                  <Button title="Update Scores" color={THEME.accent} onPress={handleSaveScores} />
-                 
+                 <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
+                 <Text style={styles.sectionHeader}>Game Setup</Text>
+                 <TouchableOpacity style={styles.actionBtn} onPress={handleRandomizeNumbers}>
+                    <Text style={styles.actionBtnText}>🎲 Randomize Numbers</Text>
+                 </TouchableOpacity>
                  <View style={{height: 20}}/>
-                 <Button title="Log Out" color="#666" onPress={() => { signOut(auth); setShowAdminModal(false); }} />
+                 <Button title="Log Out" color="#444" onPress={() => { signOut(auth); setShowAdminModal(false); }} />
+                 <View style={{height: 10}}/><Button title="Close Menu" color="#666" onPress={() => setShowAdminModal(false)} />
               </ScrollView>
             )}
           </View>
@@ -300,15 +384,25 @@ const styles = StyleSheet.create({
   axisLabel: { fontWeight: 'bold', fontSize: 16 },
   leftLabelContainer: { justifyContent: 'center', alignItems: 'center', width: 80, backgroundColor: 'transparent', zIndex: 1 },
   teamLabelLeft: { fontWeight: 'bold', fontSize: 16, width: 260, textAlign: 'center', transform: [{ rotate: '-90deg' }] },
-  fab: { position: 'absolute', bottom: 30, right: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
-  
-  // MODAL STYLES
+  fabRight: { position: 'absolute', bottom: 30, right: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  fabLeft: { position: 'absolute', bottom: 30, left: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
-  detailCard: { width: 300, backgroundColor: '#1E1E1E', borderRadius: 12, padding: 30, borderWidth: 2, borderColor: THEME.primary, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.8, shadowRadius: 25, elevation: 20 },
+  detailCard: { width: 300, backgroundColor: '#1E1E1E', borderRadius: 12, padding: 30, borderWidth: 2, borderColor: THEME.primary, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.8, shadowRadius: 25, elevation: 20, maxHeight: '80%' },
   detailTitle: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#333', width: '100%', textAlign: 'center', paddingBottom: 15 },
   modalInput: { width: '100%', backgroundColor: '#333', color: '#fff', padding: 12, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#555' },
-  sectionHeader: { color: '#888', marginTop: 15, marginBottom: 5, fontSize: 12, textTransform: 'uppercase' },
+  sectionHeader: { color: '#888', marginTop: 10, marginBottom: 10, fontSize: 12, textTransform: 'uppercase', alignSelf: 'flex-start', fontWeight: 'bold' },
   scoreRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, justifyContent: 'space-between', width: '100%' },
   scoreLabel: { color: '#fff', width: 40, fontWeight: 'bold' },
-  smallScoreInput: { backgroundColor: '#222', color: '#fff', width: '35%', textAlign: 'center', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#444' }
+  smallScoreInput: { backgroundColor: '#222', color: '#fff', width: '35%', textAlign: 'center', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#444' },
+  actionBtn: { backgroundColor: THEME.card, padding: 15, borderRadius: 8, borderWidth: 1, borderColor: THEME.gold, alignItems: 'center', width: '100%' },
+  actionBtnText: { color: THEME.gold, fontWeight: 'bold' },
+
+  // NEW STYLES FOR TICKET POPUP
+  ticketContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', backgroundColor: '#222', borderRadius: 10, padding: 15, marginBottom: 15, borderWidth: 1, borderColor: '#444' },
+  ticketColumn: { alignItems: 'center', flex: 1 },
+  ticketDivider: { width: 1, backgroundColor: '#444', height: '100%' },
+  ticketLabel: { color: '#888', fontSize: 10, fontWeight: 'bold', marginBottom: 5 },
+  ticketNumber: { color: THEME.gold, fontSize: 32, fontWeight: 'bold' },
+  ownerName: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginBottom: 5 },
+  ownerNote: { color: '#aaa', fontSize: 14, fontStyle: 'italic', marginBottom: 15 }
 });

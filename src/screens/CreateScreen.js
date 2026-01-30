@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, SafeAreaView, Alert, TouchableOpacity, ActivityIndicator, Modal, ScrollView } from 'react-native';
+import { View, Text, TextInput, Button, StyleSheet, SafeAreaView, TouchableOpacity, ActivityIndicator, Modal, ScrollView, Alert } from 'react-native';
 import { doc, setDoc } from 'firebase/firestore'; 
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme';
@@ -20,9 +20,8 @@ export default function CreateScreen({ navigation }) {
   const [selectedOption, setSelectedOption] = useState(GRID_OPTIONS[0]);
   const [showDropdown, setShowDropdown] = useState(false);
   
-  // NEW: Assignment Mode State ('manual' or 'auto')
+  // Assignment Mode State ('manual' or 'auto')
   const [assignmentMode, setAssignmentMode] = useState('manual');
-
   const [loading, setLoading] = useState(false);
 
   const handleCreate = async () => {
@@ -32,29 +31,34 @@ export default function CreateScreen({ navigation }) {
     }
 
     setLoading(true);
-    const newGameId = generateGameId();
 
     try {
-      await setDoc(doc(db, "squares_pool", newGameId), {
+      const newGameId = generateGameId();
+      
+      const gameData = {
         id: newGameId,
         name: name,
         topTeam: topTeam,
         leftTeam: leftTeam,
         createdAt: new Date(),
         
-        // Settings
+        // Grid Settings
         gridCols: selectedOption.cols,
         gridRows: selectedOption.rows,
-        assignmentMode: assignmentMode, // <--- SAVING THE MODE
+        assignmentMode: assignmentMode,
         
+        // Arrays
         topAxis: Array(selectedOption.cols).fill("?"), 
         leftAxis: Array(selectedOption.rows).fill("?"),
         
+        // Scores
         scores: { q1: { top: '', left: '' }, q2: { top: '', left: '' }, q3: { top: '', left: '' }, final: { top: '', left: '' } }
-      });
+      };
+
+      await setDoc(doc(db, "squares_pool", newGameId), gameData);
 
       setLoading(false);
-      navigation.replace('Game', { gameId: newGameId });
+      navigation.navigate('Game', { gameId: newGameId });
 
     } catch (error) {
       setLoading(false);
@@ -62,7 +66,6 @@ export default function CreateScreen({ navigation }) {
     }
   };
 
-  // Helper for Mode Buttons
   const ModeBtn = ({ mode, label, desc }) => (
     <TouchableOpacity 
         style={[styles.modeBtn, assignmentMode === mode && styles.modeBtnActive]} 
@@ -105,7 +108,6 @@ export default function CreateScreen({ navigation }) {
             </TouchableOpacity>
         </View>
 
-        {/* NEW: Assignment Mode Section */}
         <View style={styles.formGroup}>
             <Text style={styles.label}>Assignment Mode</Text>
             <View style={styles.modeRow}>
@@ -127,7 +129,6 @@ export default function CreateScreen({ navigation }) {
         
         <Button title="Cancel" color="#666" onPress={() => navigation.goBack()} />
 
-        {/* Dropdown Modal */}
         <Modal visible={showDropdown} transparent={true} animationType="fade">
             <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDropdown(false)}>
                 <View style={styles.dropdownList}>
@@ -169,8 +170,6 @@ const styles = StyleSheet.create({
   optionText: { color: '#fff', fontSize: 16 },
   optionTextActive: { color: THEME.primary, fontWeight: 'bold' },
   optionDetail: { color: '#666', fontSize: 12, marginTop: 2 },
-
-  // NEW STYLES FOR MODE TOGGLE
   modeRow: { flexDirection: 'row' },
   modeBtn: { flex: 1, backgroundColor: THEME.card, padding: 15, borderRadius: 8, borderWidth: 1, borderColor: THEME.border },
   modeBtnActive: { borderColor: THEME.primary, backgroundColor: '#222' },
