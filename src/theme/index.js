@@ -2,7 +2,7 @@
 
 export const THEME = {
   // --- 1. BRAND PALETTE ---
-  primary: '#ff2942',     // "Electric Blue" (Brand Identity)
+  primary: '#29ff49',     // "Electric Blue" (Brand Identity)
   accent: '#00C853',      // "Money Green" (Action buttons, Success)
   gold: '#FFD700',        // Axis numbers / Quarter Tabs
 

@@ -4,6 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { db } from '../../firebaseConfig';
 import { THEME } from '../theme';
+import BrandHeader from '../components/BrandHeader';
 
 export default function HomeScreen({ navigation }) {
   const [games, setGames] = useState([]);
@@ -29,6 +30,7 @@ export default function HomeScreen({ navigation }) {
   
   return (
     <SafeAreaView style={styles.container}>
+      <BrandHeader />
       <View style={{padding: 20}}>
         <Text style={styles.headerTitle}>My Pools</Text>
       </View>

@@ -1,11 +1,18 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator } from 'react-native';
+// 1. ADD 'Share' and 'Clipboard' imports
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator, Share, Platform } from 'react-native';
 import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
 import { db, auth } from '../../firebaseConfig'; 
 import GridBoard from '../components/GridBoard'; 
+// 2. Remove local styles import if you want to use the file you created, 
+// OR keep using the local styles defined at the bottom. 
+// For this snippet, I will assume we are still using the local styles block at the bottom 
+// or you can switch to: import { styles } from '../styles/GameScreen.styles';
+// If you switched to the separate file, you'll need to add the 'fabShare' style to that file.
 import { THEME } from '../theme';
+import BrandHeader from '../components/BrandHeader';
 
 const DEFAULT_SCORES = {
   q1: { top: '', left: '' },
@@ -24,21 +31,16 @@ export default function GameScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(""); 
   
-  // ADMIN & MODAL STATES
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
-  
-  // NEW: READ-ONLY DETAILS MODAL
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedDetails, setSelectedDetails] = useState(null);
 
-  // EDIT STATE
   const [editingSquare, setEditingSquare] = useState(null); 
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editNote, setEditNote] = useState("");
 
-  // ADMIN LOGIN INPUTS
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
@@ -47,7 +49,14 @@ export default function GameScreen({ route, navigation }) {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setGridData(data);
-        if (data.scores) setScores(prev => ({ ...prev, ...data.scores }));
+        if (data.scores) {
+            setScores(prev => ({
+                q1: { ...DEFAULT_SCORES.q1, ...data.scores.q1 },
+                q2: { ...DEFAULT_SCORES.q2, ...data.scores.q2 },
+                q3: { ...DEFAULT_SCORES.q3, ...data.scores.q3 },
+                final: { ...DEFAULT_SCORES.final, ...data.scores.final },
+            }));
+        }
         setLoading(false); 
       } else {
         setLoadError(`Game ID '${gameId}' not found.`);
@@ -64,8 +73,33 @@ export default function GameScreen({ route, navigation }) {
 
   // --- ACTIONS ---
 
+  // 3. NEW SHARE FUNCTION
+  const handleShare = async () => {
+    const url = `https://baseball-squares-mvp.web.app`; // Your PWA URL
+    const message = `Join my Squares Pool!\nGame ID: ${gameId}\n\nPlay here: ${url}`;
+    
+    try {
+      const result = await Share.share({
+        message: message,
+        url: url, // iOS adds this as a link
+        title: 'Squares Pool Invite'
+      });
+      
+      if (result.action === Share.sharedAction) {
+        if (result.activityType) {
+          // shared with activity type of result.activityType
+        } else {
+          // shared
+        }
+      } else if (result.action === Share.dismissedAction) {
+        // dismissed
+      }
+    } catch (error) {
+      Alert.alert(error.message);
+    }
+  };
+
   const handleSquarePress = (data) => {
-    // 1. IS THE SQUARE TAKEN? -> SHOW DETAILS POPUP
     if (data.owner) {
         const topNum = gridData.topAxis ? gridData.topAxis[data.col] : '?';
         const leftNum = gridData.leftAxis ? gridData.leftAxis[data.row] : '?';
@@ -75,21 +109,15 @@ export default function GameScreen({ route, navigation }) {
         const ownerEmail = (typeof data.owner === 'object') ? data.owner.email : "";
 
         setSelectedDetails({
-            name: ownerName,
-            note: ownerNote,
-            email: ownerEmail,
-            topNum: topNum,
-            leftNum: leftNum,
-            row: data.row,
-            col: data.col
+            name: ownerName, note: ownerNote, email: ownerEmail,
+            topNum: topNum, leftNum: leftNum,
+            row: data.row, col: data.col
         });
         setShowDetailsModal(true);
         return;
     }
 
-    // 2. IS IT EMPTY? -> CHECK MODE
     const mode = gridData.assignmentMode || 'manual'; 
-
     if (mode === 'manual') {
         openEditModal(data.row, data.col);
     } else {
@@ -97,10 +125,8 @@ export default function GameScreen({ route, navigation }) {
     }
   };
 
-  // Helper to open the edit modal (Used by Empty Click OR "Edit" button in Details)
   const openEditModal = (row, col, existingData = null) => {
     setEditingSquare({ row, col });
-    
     if (existingData) {
         setEditName(existingData.name || "");
         setEditEmail(existingData.email || "");
@@ -108,9 +134,8 @@ export default function GameScreen({ route, navigation }) {
     } else {
         setEditName(""); setEditEmail(""); setEditNote("");
     }
-    
-    setShowDetailsModal(false); // Close details if open
-    setShowEditModal(true);     // Open edit
+    setShowDetailsModal(false); 
+    setShowEditModal(true);     
   };
 
   const saveSquareInfo = async () => {
@@ -139,13 +164,28 @@ export default function GameScreen({ route, navigation }) {
               topAxis: generateShuffled(cols),
               leftAxis: generateShuffled(rows)
           });
-          Alert.alert("Numbers Randomized!", "The grid axes have been updated.");
+          Alert.alert("Success", "Numbers Randomized!");
       } catch (e) {
           Alert.alert("Error", e.message);
       }
   };
 
-  // ... (Calculations for Winning Coords & Team Colors - Same as before)
+  const handleSaveScores = async () => {
+    try {
+        await setDoc(doc(db, "squares_pool", gameId), { scores: scores }, { merge: true });
+        Alert.alert("Success", "Scores Updated");
+    } catch (e) {
+        Alert.alert("Save Failed", e.message);
+    }
+  };
+
+  const updateScoreInput = (q, team, val) => {
+    setScores(prev => ({ 
+        ...prev, 
+        [q]: { ...(prev[q] || {}), [team]: val } 
+    }));
+  };
+
   const getWinningCoords = () => {
     if (!gridData.topAxis || !gridData.leftAxis) return null;
     const currentScores = scores[activeQuarter];
@@ -179,17 +219,6 @@ export default function GameScreen({ route, navigation }) {
     } catch (e) { Alert.alert("Error", e.message); }
   };
 
-  const handleSaveScores = async () => {
-    await setDoc(doc(db, "squares_pool", gameId), { scores: scores }, { merge: true });
-    Alert.alert("Success", "Scores Updated");
-  };
-
-  const updateScoreInput = (q, team, val) => {
-    setScores(prev => ({ ...prev, [q]: { ...prev[q], [team]: val } }));
-  };
-
-  // --- RENDER ---
-
   if (loading || (!gridData.id && !loadError)) {
     return (
         <SafeAreaView style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
@@ -211,8 +240,9 @@ export default function GameScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
+      <BrandHeader />
       
-      {/* 1. SCOREBOARD */}
+      {/* SCOREBOARD */}
       <View style={styles.scoreboard}>
         <TouchableOpacity onPress={() => navigation.goBack()} style={{paddingRight: 15}}>
           <Text style={{color: '#666', fontSize: 18}}>‹</Text>
@@ -231,7 +261,7 @@ export default function GameScreen({ route, navigation }) {
         <View style={{width: 30}} />
       </View>
 
-      {/* 2. TABS */}
+      {/* TABS */}
       <View style={styles.tabBar}>
         {['q1','q2','q3','final'].map(q => (
           <TouchableOpacity key={q} style={[styles.qTab, activeQuarter === q && styles.qTabActive]} onPress={() => setActiveQuarter(q)}>
@@ -240,7 +270,7 @@ export default function GameScreen({ route, navigation }) {
         ))}
       </View>
 
-      {/* 3. GRID BOARD */}
+      {/* GRID BOARD */}
       <View style={styles.centeredView}>
         <View style={styles.boardConstrainer}>
           <View style={{alignItems: 'center', paddingVertical: 10, paddingLeft: 80}}> 
@@ -265,7 +295,7 @@ export default function GameScreen({ route, navigation }) {
         </View>
       </View>
 
-      {/* 4. FABs */}
+      {/* FABs */}
       <TouchableOpacity style={styles.fabRight} onPress={() => setShowAdminModal(true)}>
         <Text style={{fontSize: 20}}>⚙️</Text>
       </TouchableOpacity>
@@ -273,15 +303,16 @@ export default function GameScreen({ route, navigation }) {
         <Text style={{fontSize: 20}}>👥</Text>
       </TouchableOpacity>
 
-      {/* ================= MODALS ================= */}
+      {/* 4. NEW SHARE BUTTON (Top Right, above Grid) */}
+      <TouchableOpacity style={styles.fabShare} onPress={handleShare}>
+        <Text style={{fontSize: 20}}>📤</Text>
+      </TouchableOpacity>
 
-      {/* A. SQUARE DETAILS (READ ONLY) */}
+      {/* MODALS */}
       <Modal visible={showDetailsModal} transparent={true} animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDetailsModal(false)}>
             <View style={styles.detailCard}>
                  <Text style={styles.detailTitle}>Square Details</Text>
-                 
-                 {/* Numbers Visual */}
                  <View style={styles.ticketContainer}>
                     <View style={styles.ticketColumn}>
                         <Text style={styles.ticketLabel}>AWAY</Text>
@@ -293,32 +324,22 @@ export default function GameScreen({ route, navigation }) {
                         <Text style={styles.ticketNumber}>{selectedDetails?.leftNum}</Text>
                     </View>
                  </View>
-
                  <Text style={styles.ownerName}>{selectedDetails?.name}</Text>
                  <Text style={styles.ownerNote}>{selectedDetails?.note || "No notes"}</Text>
-                 
                  <View style={{height: 20}} />
-                 
-                 {/* Show Edit Button ONLY if Manual Mode */}
                  {gridData.assignmentMode === 'manual' && (
-                     <Button 
-                        title="Edit Square" 
-                        color={THEME.accent} 
-                        onPress={() => openEditModal(selectedDetails.row, selectedDetails.col, selectedDetails)} 
-                     />
+                     <Button title="Edit Square" color={THEME.accent} onPress={() => openEditModal(selectedDetails.row, selectedDetails.col, selectedDetails)} />
                  )}
-                 <View style={{height: 10}} />
-                 <Button title="Close" color="#666" onPress={() => setShowDetailsModal(false)} />
+                 <View style={{height: 10}} /><Button title="Close" color="#666" onPress={() => setShowDetailsModal(false)} />
             </View>
         </TouchableOpacity>
       </Modal>
 
-      {/* B. MANUAL EDIT FORM */}
       <Modal visible={showEditModal} transparent={true} animationType="slide">
         <View style={styles.modalOverlay}>
             <View style={styles.detailCard}>
                 <Text style={styles.detailTitle}>Edit Square</Text>
-                <TextInput style={styles.modalInput} placeholder="Player Name" placeholderTextColor="#666" value={editName} onChangeText={setEditName} />
+                <TextInput style={styles.modalInput} placeholder="Name" placeholderTextColor="#666" value={editName} onChangeText={setEditName} />
                 <TextInput style={styles.modalInput} placeholder="Email" placeholderTextColor="#666" value={editEmail} onChangeText={setEditEmail} />
                 <TextInput style={styles.modalInput} placeholder="Note" placeholderTextColor="#666" value={editNote} onChangeText={setEditNote} />
                 <View style={{height: 10}} /><Button title="Save" color={THEME.primary} onPress={saveSquareInfo} />
@@ -327,7 +348,6 @@ export default function GameScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      {/* C. ADMIN CONTROLS */}
       <Modal visible={showAdminModal} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.detailCard}>
@@ -345,8 +365,16 @@ export default function GameScreen({ route, navigation }) {
                  {['q1','q2','q3','final'].map(q => (
                    <View key={q} style={styles.scoreRow}>
                       <Text style={styles.scoreLabel}>{q.toUpperCase()}</Text>
-                      <TextInput value={scores[q]?.top} onChangeText={(v) => updateScoreInput(q, 'top', v)} style={styles.smallScoreInput} keyboardType="numeric" placeholder="Away"/>
-                      <TextInput value={scores[q]?.left} onChangeText={(v) => updateScoreInput(q, 'left', v)} style={styles.smallScoreInput} keyboardType="numeric" placeholder="Home"/>
+                      <TextInput 
+                        value={(scores[q]?.top || '').toString()} 
+                        onChangeText={(v) => updateScoreInput(q, 'top', v)} 
+                        style={styles.smallScoreInput} keyboardType="numeric" placeholder="Away"
+                      />
+                      <TextInput 
+                        value={(scores[q]?.left || '').toString()} 
+                        onChangeText={(v) => updateScoreInput(q, 'left', v)} 
+                        style={styles.smallScoreInput} keyboardType="numeric" placeholder="Home"
+                      />
                    </View>
                  ))}
                  <Button title="Update Scores" color={THEME.accent} onPress={handleSaveScores} />
@@ -386,6 +414,19 @@ const styles = StyleSheet.create({
   teamLabelLeft: { fontWeight: 'bold', fontSize: 16, width: 260, textAlign: 'center', transform: [{ rotate: '-90deg' }] },
   fabRight: { position: 'absolute', bottom: 30, right: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
   fabLeft: { position: 'absolute', bottom: 30, left: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  
+  // 5. NEW SHARE BUTTON STYLE
+  fabShare: { 
+    position: 'absolute', 
+    top: 130, // Adjust this based on header height
+    right: 20, 
+    width: 40, height: 40, 
+    borderRadius: 20, 
+    backgroundColor: THEME.primary, 
+    justifyContent: 'center', alignItems: 'center', 
+    elevation: 5, shadowColor: THEME.primary, shadowOpacity: 0.5 
+  },
+
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
   detailCard: { width: 300, backgroundColor: '#1E1E1E', borderRadius: 12, padding: 30, borderWidth: 2, borderColor: THEME.primary, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.8, shadowRadius: 25, elevation: 20, maxHeight: '80%' },
   detailTitle: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#333', width: '100%', textAlign: 'center', paddingBottom: 15 },
@@ -396,8 +437,6 @@ const styles = StyleSheet.create({
   smallScoreInput: { backgroundColor: '#222', color: '#fff', width: '35%', textAlign: 'center', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#444' },
   actionBtn: { backgroundColor: THEME.card, padding: 15, borderRadius: 8, borderWidth: 1, borderColor: THEME.gold, alignItems: 'center', width: '100%' },
   actionBtnText: { color: THEME.gold, fontWeight: 'bold' },
-
-  // NEW STYLES FOR TICKET POPUP
   ticketContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', backgroundColor: '#222', borderRadius: 10, padding: 15, marginBottom: 15, borderWidth: 1, borderColor: '#444' },
   ticketColumn: { alignItems: 'center', flex: 1 },
   ticketDivider: { width: 1, backgroundColor: '#444', height: '100%' },
