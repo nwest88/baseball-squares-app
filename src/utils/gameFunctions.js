@@ -1,15 +1,16 @@
-import { doc, updateDoc } from 'firebase/firestore';
+import { doc, updateDoc, deleteField } from 'firebase/firestore';
+import { Platform } from 'react-native';
 
 /**
  * Scans the grid and removes all squares owned by a specific player.
- * * @param {object} db - Firebase Firestore instance
- * @param {string} gameId - The ID of the game document
- * @param {object} gridData - The current grid data object (to read rows/cols)
- * @param {string} playerName - The name of the player to remove
- * @returns {Promise<number>} - Returns the number of squares cleared
  */
 export const deletePlayerFromGrid = async (db, gameId, gridData, playerName) => {
-  if (!gridData || !playerName) return 0;
+  console.log(`[DELETE STARTED] Removing player: "${playerName}" from Game: ${gameId}`);
+
+  if (!gridData || !playerName) {
+      console.error("[DELETE FAILED] Missing grid data or player name.");
+      return 0;
+  }
 
   const cols = gridData.gridCols || 10;
   const rows = gridData.gridRows || 10;
@@ -26,18 +27,34 @@ export const deletePlayerFromGrid = async (db, gameId, gridData, playerName) => 
         // Handle both Object {name: "Nic"} and String "Nic" formats
         const cellName = (typeof cell === 'object') ? cell.name : cell;
         
-        if (cellName === playerName) {
-          // Found them! Mark this key for deletion (set to null)
-          updates[key] = null; 
+        // Use trim() to avoid "Nic " vs "Nic" mismatches
+        if (cellName && cellName.trim() === playerName.trim()) {
+          console.log(`[DELETE] Found match at ${key}`);
+          
+          // CRITICAL CHANGE: Use deleteField() instead of null
+          // This completely removes the field from Firestore
+          updates[key] = deleteField(); 
+          
           foundCount++;
         }
       }
     }
   }
 
+  console.log(`[DELETE STATUS] Found ${foundCount} squares to delete.`);
+
   // Only talk to the database if we actually found something to delete
   if (foundCount > 0) {
-    await updateDoc(doc(db, "squares_pool", gameId), updates);
+    console.log("[DELETE] Sending update to Firebase...");
+    try {
+        await updateDoc(doc(db, "squares_pool", gameId), updates);
+        console.log("[DELETE SUCCESS] Database update complete.");
+    } catch (error) {
+        console.error("[DELETE ERROR] Firebase Error:", error);
+        throw error; // Re-throw so the UI knows it failed
+    }
+  } else {
+      console.warn("[DELETE SKIPPED] No squares found for this player.");
   }
 
   return foundCount;

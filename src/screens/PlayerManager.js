@@ -1,25 +1,28 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, SafeAreaView, TouchableOpacity, FlatList, TextInput, Alert, Button, KeyboardAvoidingView, Platform, Modal } from 'react-native';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+// ADDED: deleteField to imports
+import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
 import { styles } from '../styles/PlayerManager.styles';
-import { deletePlayerFromGrid } from '../utils/gameFunctions';
 
 export default function PlayerManager({ route, navigation }) {
   const { gameId } = route.params;
   const [gridData, setGridData] = useState({});
   const [loading, setLoading] = useState(true);
   
+  // AUTO ASSIGN FORM STATE
   const [name, setName] = useState("");
   const [count, setCount] = useState("");
   const [note, setNote] = useState("");
 
+  // EDIT PLAYER STATE
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [editNote, setEditNote] = useState("");
   const [showEditModal, setShowEditModal] = useState(false);
 
+  // LOAD DATA
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "squares_pool", gameId), (docSnap) => {
       if (docSnap.exists()) {
@@ -30,6 +33,9 @@ export default function PlayerManager({ route, navigation }) {
     return () => unsub();
   }, [gameId]);
 
+  // --- ACTIONS ---
+
+  // SMART BACK BUTTON
   const handleBack = () => {
       if (navigation.canGoBack()) {
           navigation.goBack();
@@ -151,33 +157,89 @@ export default function PlayerManager({ route, navigation }) {
       } else { setShowEditModal(false); }
   };
 
-  const handleDeletePlayer = async () => {
-      if (!selectedPlayer) return;
+  // --- EXECUTE DELETE (Called after confirmation) ---
+  const performDelete = async () => {
+      console.log("Delete confirmed. Processing...");
+      try {
+          // INLINED LOGIC: Scan and delete directly to ensure imports/params work
+          const cols = gridData.gridCols || 10;
+          const rows = gridData.gridRows || 10;
+          const updates = {};
+          let foundCount = 0;
 
-      Alert.alert(
-          "Delete Player?", 
-          `This will remove ${selectedPlayer.name} and clear all ${selectedPlayer.count} of their squares.`,
-          [
-              { text: "Cancel", style: "cancel" },
-              { 
-                  text: "Delete", 
-                  style: "destructive", 
-                  onPress: async () => {
-                      try {
-                          // CLEAN: Just call the function!
-                          await deletePlayerFromGrid(db, gameId, gridData, selectedPlayer.name);
-                          setShowEditModal(false);
-                      } catch (e) {
-                          Alert.alert("Error", e.message);
-                      }
-                  }
+          // 1. Find matches
+          for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+              const key = `${r}-${c}`;
+              const cell = gridData[key];
+              if (cell) {
+                 const cellName = (typeof cell === 'object') ? cell.name : cell;
+                 // Trim names to handle "Nic " vs "Nic"
+                 if (cellName && cellName.trim() === selectedPlayer.name.trim()) {
+                     // 2. Mark for deletion
+                     updates[key] = deleteField();
+                     foundCount++;
+                 }
               }
-          ]
-      );
+            }
+          }
+
+          // 3. Commit
+          if (foundCount > 0) {
+              await updateDoc(doc(db, "squares_pool", gameId), updates);
+              console.log(`Deleted ${foundCount} squares.`);
+          } else {
+              console.warn("No squares matched the player name.");
+          }
+
+          // 4. Close Modal
+          setShowEditModal(false);
+          
+      } catch (e) {
+          console.error("Delete Error: ", e);
+          if (Platform.OS === 'web') {
+              window.alert("Delete Failed: " + e.message);
+          } else {
+              Alert.alert("Error", e.message);
+          }
+          // Force close modal so user isn't stuck
+          setShowEditModal(false);
+      }
+  };
+
+  // --- HANDLE BUTTON CLICK ---
+  const handleDeletePlayer = async () => {
+      // 1. Debug check to see if button is even clicking
+      console.log("Delete button clicked for:", selectedPlayer?.name);
+      
+      if (!selectedPlayer) {
+          console.warn("No player selected!");
+          return;
+      }
+
+      // WEB FIX: Use native browser confirm
+      if (Platform.OS === 'web') {
+          // Force a browser dialog. If this doesn't show, the button press isn't registering.
+          const confirmed = window.confirm(`Permanently delete ${selectedPlayer.name}?\n\nThis will clear ${selectedPlayer.count} squares.`);
+          if (confirmed) {
+              await performDelete();
+          }
+      } else {
+          // MOBILE: Use native Alert
+          Alert.alert(
+              "Delete Player?", 
+              `This will remove ${selectedPlayer.name} and clear all ${selectedPlayer.count} of their squares.`,
+              [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Delete", style: "destructive", onPress: performDelete }
+              ]
+          );
+      }
   };
 
   return (
     <SafeAreaView style={styles.container}>
+      {/* 1. BRAND HEADER ADDED HERE */}
       <BrandHeader />
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1}}>
@@ -192,6 +254,7 @@ export default function PlayerManager({ route, navigation }) {
             <View style={{width: 50}} /> 
           </View>
 
+          {/* STATS DASHBOARD */}
           <View style={styles.statsContainer}>
              <View style={styles.statsRow}>
                  <Text style={styles.statsLabel}>TOTAL TAKEN</Text>
@@ -207,6 +270,7 @@ export default function PlayerManager({ route, navigation }) {
              </Text>
           </View>
 
+          {/* AUTO ASSIGN FORM */}
           {gridData.assignmentMode === 'auto' && (
               <View style={[styles.formCard, stats.isFull && {opacity: 0.5}]}>
                 <Text style={styles.sectionTitle}>🎲 Add Player</Text>
@@ -246,6 +310,7 @@ export default function PlayerManager({ route, navigation }) {
               </View>
           )}
 
+          {/* ROSTER LIST */}
           <View style={styles.listContainer}>
              <Text style={styles.sectionTitle}>
                 Player Roster ({getPlayerStats().length})
@@ -280,6 +345,7 @@ export default function PlayerManager({ route, navigation }) {
              />
           </View>
 
+          {/* BULK EDIT MODAL */}
           <Modal visible={showEditModal} transparent={true} animationType="slide">
              <View style={styles.modalOverlay}>
                  <View style={styles.modalCard}>
