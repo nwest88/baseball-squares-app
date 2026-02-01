@@ -2,7 +2,7 @@ import { StyleSheet } from 'react-native';
 import { THEME } from '../theme';
 
 export const styles = StyleSheet.create({
-  // ... (Previous styles same as before) ...
+  // ... (Keep existing container, scoreboard, tab, board styles same as before) ...
   container: { flex: 1, backgroundColor: THEME.bg },
   scoreboard: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: THEME.card, borderBottomWidth: 1, borderColor: THEME.border },
   teamBadgeText: { fontWeight: 'bold', fontSize: 12, textTransform: 'uppercase' },
@@ -14,13 +14,22 @@ export const styles = StyleSheet.create({
   qTabText: { color: '#666', fontWeight: 'bold' },
   qTabTextActive: { color: THEME.accent },
   centeredView: { flex: 1, alignItems: 'center' },
-  boardConstrainer: { width: '100%', maxWidth: 500, flex: 1, paddingBottom: 40 },
+  boardConstrainer: { width: '100%', maxWidth: 500, flex: 1, paddingBottom: 40, alignSelf: 'center', alignItems: 'center' },
   axisLabel: { fontWeight: 'bold', fontSize: 16 },
-  leftLabelContainer: { justifyContent: 'center', alignItems: 'center', width: 80, backgroundColor: 'transparent', zIndex: 1 },
+  leftLabelContainer: { justifyContent: 'center', alignItems: 'center', width: 100, backgroundColor: 'transparent', zIndex: 1 },
   teamLabelLeft: { fontWeight: 'bold', fontSize: 16, width: 260, textAlign: 'center', transform: [{ rotate: '-90deg' }] },
-  fabRight: { position: 'absolute', bottom: 30, right: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  
+  // --- UPDATED FABS ---
+  // Bottom Left (Player Manager) - Unchanged
   fabLeft: { position: 'absolute', bottom: 30, left: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
-  fabShare: { position: 'absolute', top: 130, right: 20, width: 40, height: 40, borderRadius: 20, backgroundColor: THEME.primary, justifyContent: 'center', alignItems: 'center', elevation: 5, shadowColor: THEME.primary, shadowOpacity: 0.5 },
+  
+  // Bottom Right (Now the Share Button)
+  fabRight: { position: 'absolute', bottom: 30, right: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  
+  // Floating Above Bottom Right (Settings Button) - 30px bottom + 50px height + 15px gap = 95px
+  fabAbove: { position: 'absolute', bottom: 95, right: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: THEME.primary, justifyContent: 'center', alignItems: 'center', elevation: 5 },
+
+  // ... (Keep existing modal styles) ...
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
   detailCard: { width: 300, backgroundColor: '#1E1E1E', borderRadius: 12, padding: 30, borderWidth: 2, borderColor: THEME.primary, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.8, shadowRadius: 25, elevation: 20, maxHeight: '80%' },
   detailTitle: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#333', width: '100%', textAlign: 'center', paddingBottom: 15 },
@@ -38,7 +47,5 @@ export const styles = StyleSheet.create({
   ticketNumber: { color: THEME.gold, fontSize: 32, fontWeight: 'bold' },
   ownerName: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginBottom: 5 },
   ownerNote: { color: '#aaa', fontSize: 14, fontStyle: 'italic', marginBottom: 15 },
-  
-  // NEW STYLE
   inputLabel: { color: '#888', fontSize: 10, marginBottom: 4, textTransform: 'uppercase', fontWeight: 'bold' }
 });
