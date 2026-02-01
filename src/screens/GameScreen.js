@@ -1,16 +1,9 @@
 import React, { useState, useEffect } from 'react';
-// 1. ADD 'Share' and 'Clipboard' imports
 import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator, Share, Platform } from 'react-native';
 import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-
 import { db, auth } from '../../firebaseConfig'; 
 import GridBoard from '../components/GridBoard'; 
-// 2. Remove local styles import if you want to use the file you created, 
-// OR keep using the local styles defined at the bottom. 
-// For this snippet, I will assume we are still using the local styles block at the bottom 
-// or you can switch to: import { styles } from '../styles/GameScreen.styles';
-// If you switched to the separate file, you'll need to add the 'fabShare' style to that file.
 import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
 
@@ -23,7 +16,7 @@ const DEFAULT_SCORES = {
 
 export default function GameScreen({ route, navigation }) {
   const { gameId } = route.params;
-  
+
   const [gridData, setGridData] = useState({});
   const [user, setUser] = useState(null);
   const [activeQuarter, setActiveQuarter] = useState('q1');
@@ -244,7 +237,7 @@ export default function GameScreen({ route, navigation }) {
       
       {/* SCOREBOARD */}
       <View style={styles.scoreboard}>
-        <TouchableOpacity onPress={() => navigation.goBack()} style={{paddingRight: 15}}>
+        <TouchableOpacity onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Home')} style={{paddingRight: 15}}>
           <Text style={{color: '#666', fontSize: 18}}>‹</Text>
         </TouchableOpacity>
         <View style={{flexDirection: 'row', alignItems: 'center', flex: 1, justifyContent: 'center'}}>
