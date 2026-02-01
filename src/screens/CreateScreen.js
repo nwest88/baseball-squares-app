@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
-import { View, Text, TextInput, Button, StyleSheet, SafeAreaView, TouchableOpacity, ActivityIndicator, Modal, ScrollView, Alert } from 'react-native';
+import { View, Text, TextInput, Button, SafeAreaView, TouchableOpacity, ActivityIndicator, Modal, ScrollView, Alert } from 'react-native';
 import { doc, setDoc } from 'firebase/firestore'; 
+import { getAuth } from 'firebase/auth'; 
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme';
-import { styles } from '../styles/CreateScreen.styles';
 import BrandHeader from '../components/BrandHeader';
+import { styles } from '../styles/CreateScreen.styles';
 
 const generateGameId = () => Math.random().toString(36).substring(2, 8).toUpperCase();
 
@@ -16,20 +17,31 @@ const GRID_OPTIONS = [
 
 export default function CreateScreen({ navigation }) {
   const [name, setName] = useState('');
+  const [hostName, setHostName] = useState(''); 
   const [topTeam, setTopTeam] = useState('');
   const [leftTeam, setLeftTeam] = useState('');
   
   const [selectedOption, setSelectedOption] = useState(GRID_OPTIONS[0]);
   const [showDropdown, setShowDropdown] = useState(false);
-  
-  // Assignment Mode State ('manual' or 'auto')
   const [assignmentMode, setAssignmentMode] = useState('manual');
+  
+  const [price, setPrice] = useState(''); 
+  const [hostCut, setHostCut] = useState(''); 
+  const [isPublic, setIsPublic] = useState(true); 
+
   const [loading, setLoading] = useState(false);
 
   const handleCreate = async () => {
     if (!name || !topTeam || !leftTeam) {
       Alert.alert("Missing Info", "Please fill out all fields.");
       return;
+    }
+
+    const auth = getAuth();
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+        Alert.alert("Error", "You must be signed in (even anonymously) to create a pool.");
+        return;
     }
 
     setLoading(true);
@@ -40,27 +52,30 @@ export default function CreateScreen({ navigation }) {
       const gameData = {
         id: newGameId,
         name: name,
+        hostName: hostName, 
         topTeam: topTeam,
         leftTeam: leftTeam,
         createdAt: new Date(),
         
-        // Grid Settings
+        adminId: currentUser.uid,        
+        pricePerSquare: Number(price) || 0, 
+        hostCut: hostCut,                
+        isPublic: isPublic,              
+
         gridCols: selectedOption.cols,
         gridRows: selectedOption.rows,
         assignmentMode: assignmentMode,
         
-        // Arrays
         topAxis: Array(selectedOption.cols).fill("?"), 
         leftAxis: Array(selectedOption.rows).fill("?"),
         
-        // Scores
         scores: { q1: { top: '', left: '' }, q2: { top: '', left: '' }, q3: { top: '', left: '' }, final: { top: '', left: '' } }
       };
 
       await setDoc(doc(db, "squares_pool", newGameId), gameData);
 
       setLoading(false);
-      navigation.navigate('Game', { gameId: newGameId });
+      navigation.replace('Game', { gameId: newGameId });
 
     } catch (error) {
       setLoading(false);
@@ -68,38 +83,45 @@ export default function CreateScreen({ navigation }) {
     }
   };
 
-  const ModeBtn = ({ mode, label, desc }) => (
+  const ToggleBtn = ({ selected, label, desc, onPress }) => (
     <TouchableOpacity 
-        style={[styles.modeBtn, assignmentMode === mode && styles.modeBtnActive]} 
-        onPress={() => setAssignmentMode(mode)}
+        style={[styles.modeBtn, selected && styles.modeBtnActive]} 
+        onPress={onPress}
     >
-        <Text style={[styles.modeTitle, assignmentMode === mode && styles.modeTitleActive]}>{label}</Text>
-        <Text style={[styles.modeDesc, assignmentMode === mode && styles.modeDescActive]}>{desc}</Text>
+        <Text style={[styles.modeTitle, selected && styles.modeTitleActive]}>{label}</Text>
+        <Text style={[styles.modeDesc, selected && styles.modeDescActive]}>{desc}</Text>
     </TouchableOpacity>
   );
 
   return (
     <SafeAreaView style={styles.container}>
-    <BrandHeader title="Create Contest" /> 
+      <BrandHeader title="New Pool" />
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.header}>New Contest</Text>
-
+        
+        {/* BASIC INFO */}
         <View style={styles.formGroup}>
-            <Text style={styles.label}>Contest Name</Text>
+            <Text style={styles.label}>Pool Name</Text>
             <TextInput style={styles.input} placeholder="e.g. Super Bowl Party" placeholderTextColor="#666" value={name} onChangeText={setName}/>
+        </View>
+
+        {/* HOST INFO */}
+        <View style={styles.formGroup}>
+            <Text style={styles.label}>Host / Organization</Text>
+            <TextInput style={styles.input} placeholder="e.g. LBC Silver 12U" placeholderTextColor="#666" value={hostName} onChangeText={setHostName}/>
         </View>
 
         <View style={styles.row}>
             <View style={[styles.formGroup, {flex: 1, marginRight: 10}]}>
-                <Text style={styles.label}>Top Team</Text>
+                <Text style={styles.label}>Away (Top)</Text>
                 <TextInput style={styles.input} placeholder="e.g. Chiefs" placeholderTextColor="#666" value={topTeam} onChangeText={setTopTeam}/>
             </View>
             <View style={[styles.formGroup, {flex: 1}]}>
-                <Text style={styles.label}>Left Team</Text>
+                <Text style={styles.label}>Home (Left)</Text>
                 <TextInput style={styles.input} placeholder="e.g. Eagles" placeholderTextColor="#666" value={leftTeam} onChangeText={setLeftTeam}/>
             </View>
         </View>
 
+        {/* GRID FORMAT */}
         <View style={styles.formGroup}>
             <Text style={styles.label}>Grid Format</Text>
             <TouchableOpacity style={styles.dropdownButton} onPress={() => setShowDropdown(true)}>
@@ -111,12 +133,48 @@ export default function CreateScreen({ navigation }) {
             </TouchableOpacity>
         </View>
 
+        {/* FINANCIALS */}
+        <View style={styles.row}>
+            <View style={[styles.formGroup, {flex: 1, marginRight: 10}]}>
+                <Text style={styles.label}>Price / Square ($)</Text>
+                <TextInput 
+                    style={styles.input} 
+                    placeholder="0" 
+                    placeholderTextColor="#666" 
+                    value={price} 
+                    onChangeText={setPrice}
+                    keyboardType="numeric"
+                />
+            </View>
+            <View style={[styles.formGroup, {flex: 1}]}>
+                <Text style={styles.label}>Host Cut</Text>
+                <TextInput 
+                    style={styles.input} 
+                    placeholder="e.g. 50% or $500" 
+                    placeholderTextColor="#666" 
+                    value={hostCut} 
+                    onChangeText={setHostCut}
+                />
+            </View>
+        </View>
+
+        {/* ASSIGNMENT MODE */}
         <View style={styles.formGroup}>
             <Text style={styles.label}>Assignment Mode</Text>
             <View style={styles.modeRow}>
-                <ModeBtn mode="manual" label="Manual Pick" desc="Click square -> Enter Name" />
+                <ToggleBtn selected={assignmentMode === 'manual'} label="Manual Pick" desc="Click square -> Enter Name" onPress={() => setAssignmentMode('manual')} />
                 <View style={{width: 10}}/>
-                <ModeBtn mode="auto" label="Auto Assign" desc="Add Player -> Random Squares" />
+                <ToggleBtn selected={assignmentMode === 'auto'} label="Auto Assign" desc="Add Player -> Random Squares" onPress={() => setAssignmentMode('auto')} />
+            </View>
+        </View>
+
+        {/* PRIVACY SETTINGS */}
+        <View style={styles.formGroup}>
+            <Text style={styles.label}>Privacy</Text>
+            <View style={styles.modeRow}>
+                <ToggleBtn selected={isPublic === true} label="Public" desc="Visible in Search" onPress={() => setIsPublic(true)} />
+                <View style={{width: 10}}/>
+                <ToggleBtn selected={isPublic === false} label="Private" desc="Invite Link Only" onPress={() => setIsPublic(false)} />
             </View>
         </View>
 
@@ -132,6 +190,7 @@ export default function CreateScreen({ navigation }) {
         
         <Button title="Cancel" color="#666" onPress={() => navigation.goBack()} />
 
+        {/* Dropdown Modal */}
         <Modal visible={showDropdown} transparent={true} animationType="fade">
             <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDropdown(false)}>
                 <View style={styles.dropdownList}>

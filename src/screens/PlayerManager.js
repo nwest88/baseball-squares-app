@@ -1,28 +1,31 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, FlatList, TextInput, Alert, Button, KeyboardAvoidingView, Platform, Modal } from 'react-native';
-// ADDED: deleteField to imports
-import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
+import { View, Text, SafeAreaView, TouchableOpacity, FlatList, TextInput, Alert, Button, KeyboardAvoidingView, Platform, Modal, Switch } from 'react-native';
+import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
 import { styles } from '../styles/PlayerManager.styles';
+// 1. IMPORT THE NEW FUNCTION
+import { deletePlayerFromGrid, updatePlayerAllocation } from '../utils/gameFunctions';
 
 export default function PlayerManager({ route, navigation }) {
   const { gameId } = route.params;
   const [gridData, setGridData] = useState({});
   const [loading, setLoading] = useState(true);
   
-  // AUTO ASSIGN FORM STATE
   const [name, setName] = useState("");
   const [count, setCount] = useState("");
   const [note, setNote] = useState("");
 
-  // EDIT PLAYER STATE
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [editNote, setEditNote] = useState("");
+  
+  // NEW: Edit Count State
+  const [editCount, setEditCount] = useState(""); 
+  const [isReshuffle, setIsReshuffle] = useState(false); 
+  
   const [showEditModal, setShowEditModal] = useState(false);
 
-  // LOAD DATA
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "squares_pool", gameId), (docSnap) => {
       if (docSnap.exists()) {
@@ -33,9 +36,6 @@ export default function PlayerManager({ route, navigation }) {
     return () => unsub();
   }, [gameId]);
 
-  // --- ACTIONS ---
-
-  // SMART BACK BUTTON
   const handleBack = () => {
       if (navigation.canGoBack()) {
           navigation.goBack();
@@ -124,108 +124,71 @@ export default function PlayerManager({ route, navigation }) {
   const openEditModal = (player) => {
       setSelectedPlayer(player);
       setEditNote(player.note || "");
+      setEditCount(player.count.toString()); // Pre-fill Count
+      setIsReshuffle(false); // Reset toggle
       setShowEditModal(true);
   };
 
-  const saveBulkNote = async () => {
+  const handleSaveChanges = async () => {
       if (!selectedPlayer) return;
-      const cols = gridData.gridCols || 10;
-      const rows = gridData.gridRows || 10;
-      const updates = {};
-      let found = false;
 
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const key = `${r}-${c}`;
-          const cell = gridData[key];
-          if (cell) {
-             const cellName = (typeof cell === 'object') ? cell.name : cell;
-             if (cellName === selectedPlayer.name) {
-                 const currentData = (typeof cell === 'object') ? cell : { name: cell, email: "" };
-                 updates[key] = { ...currentData, note: editNote };
-                 found = true;
-             }
-          }
-        }
-      }
-
-      if (found) {
-          try {
-              await updateDoc(doc(db, "squares_pool", gameId), updates);
-              setShowEditModal(false);
-          } catch (e) { Alert.alert("Error", "Update failed: " + e.message); }
-      } else { setShowEditModal(false); }
-  };
-
-  // --- EXECUTE DELETE (Called after confirmation) ---
-  const performDelete = async () => {
-      console.log("Delete confirmed. Processing...");
       try {
-          // INLINED LOGIC: Scan and delete directly to ensure imports/params work
+          // 1. Update Notes (Bulk) - We still do this to ensure notes sync
           const cols = gridData.gridCols || 10;
           const rows = gridData.gridRows || 10;
           const updates = {};
-          let foundCount = 0;
-
-          // 1. Find matches
-          for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-              const key = `${r}-${c}`;
-              const cell = gridData[key];
-              if (cell) {
-                 const cellName = (typeof cell === 'object') ? cell.name : cell;
-                 // Trim names to handle "Nic " vs "Nic"
-                 if (cellName && cellName.trim() === selectedPlayer.name.trim()) {
-                     // 2. Mark for deletion
-                     updates[key] = deleteField();
-                     foundCount++;
-                 }
-              }
-            }
-          }
-
-          // 3. Commit
-          if (foundCount > 0) {
-              await updateDoc(doc(db, "squares_pool", gameId), updates);
-              console.log(`Deleted ${foundCount} squares.`);
-          } else {
-              console.warn("No squares matched the player name.");
-          }
-
-          // 4. Close Modal
-          setShowEditModal(false);
           
-      } catch (e) {
-          console.error("Delete Error: ", e);
-          if (Platform.OS === 'web') {
-              window.alert("Delete Failed: " + e.message);
-          } else {
-              Alert.alert("Error", e.message);
+          // 2. Call the Allocator to handle Count/Reshuffle
+          // We pass 'selectedPlayer' object which has the *original* count, 
+          // and 'editCount' which is the *new* count.
+          // Note: We need to pass the full player object with email/note for the allocator to re-create squares
+          const playerObj = { 
+              name: selectedPlayer.name, 
+              count: selectedPlayer.count, 
+              note: editNote, // Use NEW note
+              email: "" // We don't have email in the list view yet, can add later
+          };
+
+          await updatePlayerAllocation(db, gameId, gridData, playerObj, editCount, isReshuffle);
+          
+          // If Reshuffle was off, but note changed, we need to ensure notes updated on existing squares
+          // The updatePlayerAllocation handles new/reshuffled ones, but static ones might need note updates.
+          // For simplicity in MVP: We loop and update notes separately if not reshuffling.
+          if (!isReshuffle) {
+             for (let r = 0; r < rows; r++) {
+                for (let c = 0; c < cols; c++) {
+                  const key = `${r}-${c}`;
+                  const cell = gridData[key];
+                  if (cell) {
+                     const cellName = (typeof cell === 'object') ? cell.name : cell;
+                     if (cellName === selectedPlayer.name) {
+                         const currentData = (typeof cell === 'object') ? cell : { name: cell, email: "" };
+                         // Only update if note changed
+                         if (currentData.note !== editNote) {
+                             updates[key] = { ...currentData, note: editNote };
+                         }
+                     }
+                  }
+                }
+             }
+             if (Object.keys(updates).length > 0) {
+                 await updateDoc(doc(db, "squares_pool", gameId), updates);
+             }
           }
-          // Force close modal so user isn't stuck
+
           setShowEditModal(false);
+      } catch (e) {
+          Alert.alert("Update Failed", e.message);
       }
   };
 
-  // --- HANDLE BUTTON CLICK ---
   const handleDeletePlayer = async () => {
-      // 1. Debug check to see if button is even clicking
-      console.log("Delete button clicked for:", selectedPlayer?.name);
-      
-      if (!selectedPlayer) {
-          console.warn("No player selected!");
-          return;
-      }
+      if (!selectedPlayer) return;
 
-      // WEB FIX: Use native browser confirm
       if (Platform.OS === 'web') {
-          // Force a browser dialog. If this doesn't show, the button press isn't registering.
-          const confirmed = window.confirm(`Permanently delete ${selectedPlayer.name}?\n\nThis will clear ${selectedPlayer.count} squares.`);
-          if (confirmed) {
-              await performDelete();
-          }
+          const confirmed = window.confirm(`Delete ${selectedPlayer.name} and clear all ${selectedPlayer.count} squares?`);
+          if (confirmed) performDelete();
       } else {
-          // MOBILE: Use native Alert
           Alert.alert(
               "Delete Player?", 
               `This will remove ${selectedPlayer.name} and clear all ${selectedPlayer.count} of their squares.`,
@@ -237,9 +200,17 @@ export default function PlayerManager({ route, navigation }) {
       }
   };
 
+  const performDelete = async () => {
+      try {
+          await deletePlayerFromGrid(db, gameId, gridData, selectedPlayer.name);
+          setShowEditModal(false);
+      } catch (e) {
+          Alert.alert("Error", e.message);
+      }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
-      {/* 1. BRAND HEADER ADDED HERE */}
       <BrandHeader />
 
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1}}>
@@ -254,7 +225,6 @@ export default function PlayerManager({ route, navigation }) {
             <View style={{width: 50}} /> 
           </View>
 
-          {/* STATS DASHBOARD */}
           <View style={styles.statsContainer}>
              <View style={styles.statsRow}>
                  <Text style={styles.statsLabel}>TOTAL TAKEN</Text>
@@ -345,12 +315,35 @@ export default function PlayerManager({ route, navigation }) {
              />
           </View>
 
-          {/* BULK EDIT MODAL */}
+          {/* EDIT MODAL */}
           <Modal visible={showEditModal} transparent={true} animationType="slide">
              <View style={styles.modalOverlay}>
                  <View style={styles.modalCard}>
                      <Text style={styles.modalTitle}>Edit {selectedPlayer?.name}</Text>
                      
+                     <Text style={{color: '#888', fontSize: 10, fontWeight: 'bold', marginBottom: 5}}>SQUARE COUNT</Text>
+                     <TextInput 
+                        style={styles.modalInput}
+                        placeholder="#"
+                        placeholderTextColor="#666"
+                        value={editCount}
+                        onChangeText={setEditCount}
+                        keyboardType="numeric"
+                     />
+
+                     <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 20, justifyContent: 'space-between'}}>
+                        <View style={{flex: 1}}>
+                            <Text style={{color: '#fff', fontWeight: 'bold'}}>Re-roll Squares?</Text>
+                            <Text style={{color: '#666', fontSize: 10}}>Clears current spots and picks random new ones.</Text>
+                        </View>
+                        <Switch 
+                            value={isReshuffle}
+                            onValueChange={setIsReshuffle}
+                            trackColor={{ false: "#333", true: THEME.primary }}
+                        />
+                     </View>
+
+                     <Text style={{color: '#888', fontSize: 10, fontWeight: 'bold', marginBottom: 5}}>NOTE / STATUS</Text>
                      <TextInput 
                         style={styles.modalInput}
                         placeholder="Note (e.g. Paid)"
@@ -359,7 +352,7 @@ export default function PlayerManager({ route, navigation }) {
                         onChangeText={setEditNote}
                      />
                      
-                     <Button title="Save Update" color={THEME.primary} onPress={saveBulkNote} />
+                     <Button title="Save Changes" color={THEME.primary} onPress={handleSaveChanges} />
                      <View style={{height: 10}}/>
                      <Button title="Cancel" color="#666" onPress={() => setShowEditModal(false)} />
                      
