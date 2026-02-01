@@ -1,11 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator, Share, Platform } from 'react-native';
+import { View, Text, StyleSheet, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator, Share, Platform } from 'react-native';
 import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
-
 import { db, auth } from '../../firebaseConfig'; 
 import GridBoard from '../components/GridBoard'; 
-import { styles } from '../styles/GameScreen.styles'; // Using your separate style file
 import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
 
@@ -18,7 +16,7 @@ const DEFAULT_SCORES = {
 
 export default function GameScreen({ route, navigation }) {
   const { gameId } = route.params;
-  
+
   const [gridData, setGridData] = useState({});
   const [user, setUser] = useState(null);
   const [activeQuarter, setActiveQuarter] = useState('q1');
@@ -26,34 +24,24 @@ export default function GameScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(""); 
   
-  // ADMIN & MODAL STATES
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedDetails, setSelectedDetails] = useState(null);
 
-  // EDIT SQUARE STATE
   const [editingSquare, setEditingSquare] = useState(null); 
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editNote, setEditNote] = useState("");
 
-  // ADMIN LOGIN INPUTS
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
-  // --- NEW: SETTINGS STATE (For renaming teams/pool) ---
-  const [settingsName, setSettingsName] = useState("");
-  const [settingsTop, setSettingsTop] = useState("");
-  const [settingsLeft, setSettingsLeft] = useState("");
 
   useEffect(() => {
     const unsubDocs = onSnapshot(doc(db, "squares_pool", gameId), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
         setGridData(data);
-        
-        // Sync Scores
         if (data.scores) {
             setScores(prev => ({
                 q1: { ...DEFAULT_SCORES.q1, ...data.scores.q1 },
@@ -62,15 +50,6 @@ export default function GameScreen({ route, navigation }) {
                 final: { ...DEFAULT_SCORES.final, ...data.scores.final },
             }));
         }
-
-        // Sync Settings Inputs (Only if user hasn't typed yet to avoid overwriting)
-        // Ideally we sync on load, but for realtime updates:
-        if (!showAdminModal) {
-            setSettingsName(data.name || "");
-            setSettingsTop(data.topTeam || "");
-            setSettingsLeft(data.leftTeam || "");
-        }
-
         setLoading(false); 
       } else {
         setLoadError(`Game ID '${gameId}' not found.`);
@@ -83,21 +62,38 @@ export default function GameScreen({ route, navigation }) {
 
     const unsubAuth = onAuthStateChanged(auth, u => setUser(u));
     return () => { unsubDocs(); unsubAuth(); };
-  }, [gameId, showAdminModal]); // Re-sync when modal closes/opens
+  }, [gameId]);
 
   // --- ACTIONS ---
 
+  // 3. NEW SHARE FUNCTION
   const handleShare = async () => {
-    const url = `https://baseball-squares-mvp.web.app/game/${gameId}`;
+    const url = `https://baseball-squares-mvp.web.app`; // Your PWA URL
     const message = `Join my Squares Pool!\nGame ID: ${gameId}\n\nPlay here: ${url}`;
+    
     try {
-      await Share.share({ message, url, title: 'Squares Pool Invite' });
-    } catch (error) { Alert.alert(error.message); }
+      const result = await Share.share({
+        message: message,
+        url: url, // iOS adds this as a link
+        title: 'Squares Pool Invite'
+      });
+      
+      if (result.action === Share.sharedAction) {
+        if (result.activityType) {
+          // shared with activity type of result.activityType
+        } else {
+          // shared
+        }
+      } else if (result.action === Share.dismissedAction) {
+        // dismissed
+      }
+    } catch (error) {
+      Alert.alert(error.message);
+    }
   };
 
   const handleSquarePress = (data) => {
     if (data.owner) {
-        // View Details
         const topNum = gridData.topAxis ? gridData.topAxis[data.col] : '?';
         const leftNum = gridData.leftAxis ? gridData.leftAxis[data.row] : '?';
         
@@ -114,7 +110,6 @@ export default function GameScreen({ route, navigation }) {
         return;
     }
 
-    // Edit Empty
     const mode = gridData.assignmentMode || 'manual'; 
     if (mode === 'manual') {
         openEditModal(data.row, data.col);
@@ -145,7 +140,9 @@ export default function GameScreen({ route, navigation }) {
     try {
         await setDoc(doc(db, "squares_pool", gameId), { [key]: valueToSave }, { merge: true });
         setShowEditModal(false);
-    } catch (e) { Alert.alert("Error", "Could not save square."); }
+    } catch (e) {
+        Alert.alert("Error", "Could not save square.");
+    }
   };
 
   const handleRandomizeNumbers = async () => {
@@ -161,18 +158,6 @@ export default function GameScreen({ route, navigation }) {
               leftAxis: generateShuffled(rows)
           });
           Alert.alert("Success", "Numbers Randomized!");
-      } catch (e) { Alert.alert("Error", e.message); }
-  };
-
-  // --- NEW: UPDATE SETTINGS ---
-  const handleUpdateSettings = async () => {
-      try {
-          await updateDoc(doc(db, "squares_pool", gameId), {
-              name: settingsName,
-              topTeam: settingsTop,
-              leftTeam: settingsLeft
-          });
-          Alert.alert("Success", "Pool details updated!");
       } catch (e) {
           Alert.alert("Error", e.message);
       }
@@ -182,11 +167,16 @@ export default function GameScreen({ route, navigation }) {
     try {
         await setDoc(doc(db, "squares_pool", gameId), { scores: scores }, { merge: true });
         Alert.alert("Success", "Scores Updated");
-    } catch (e) { Alert.alert("Save Failed", e.message); }
+    } catch (e) {
+        Alert.alert("Save Failed", e.message);
+    }
   };
 
   const updateScoreInput = (q, team, val) => {
-    setScores(prev => ({ ...prev, [q]: { ...(prev[q] || {}), [team]: val } }));
+    setScores(prev => ({ 
+        ...prev, 
+        [q]: { ...(prev[q] || {}), [team]: val } 
+    }));
   };
 
   const getWinningCoords = () => {
@@ -245,6 +235,7 @@ export default function GameScreen({ route, navigation }) {
     <SafeAreaView style={styles.container}>
       <BrandHeader />
       
+      {/* SCOREBOARD */}
       <View style={styles.scoreboard}>
         <TouchableOpacity onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Home')} style={{paddingRight: 15}}>
           <Text style={{color: '#666', fontSize: 18}}>‹</Text>
@@ -263,6 +254,7 @@ export default function GameScreen({ route, navigation }) {
         <View style={{width: 30}} />
       </View>
 
+      {/* TABS */}
       <View style={styles.tabBar}>
         {['q1','q2','q3','final'].map(q => (
           <TouchableOpacity key={q} style={[styles.qTab, activeQuarter === q && styles.qTabActive]} onPress={() => setActiveQuarter(q)}>
@@ -271,6 +263,7 @@ export default function GameScreen({ route, navigation }) {
         ))}
       </View>
 
+      {/* GRID BOARD */}
       <View style={styles.centeredView}>
         <View style={styles.boardConstrainer}>
           <View style={{alignItems: 'center', paddingVertical: 10, paddingLeft: 80}}> 
@@ -302,6 +295,8 @@ export default function GameScreen({ route, navigation }) {
       <TouchableOpacity style={styles.fabLeft} onPress={() => navigation.navigate('PlayerManager', { gameId: gameId })}>
         <Text style={{fontSize: 20}}>👥</Text>
       </TouchableOpacity>
+
+      {/* 4. NEW SHARE BUTTON (Top Right, above Grid) */}
       <TouchableOpacity style={styles.fabShare} onPress={handleShare}>
         <Text style={{fontSize: 20}}>📤</Text>
       </TouchableOpacity>
@@ -349,8 +344,7 @@ export default function GameScreen({ route, navigation }) {
       <Modal visible={showAdminModal} animationType="slide" transparent={true}>
         <View style={styles.modalOverlay}>
           <View style={styles.detailCard}>
-            <Text style={styles.detailTitle}>Admin Controls</Text>
-            
+            <Text style={styles.detailTitle}>Ref Controls</Text>
             {!user ? (
                <View style={{width: '100%'}}>
                  <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.modalInput} placeholderTextColor="#666" autoCapitalize="none"/>
@@ -360,27 +354,6 @@ export default function GameScreen({ route, navigation }) {
                </View>
             ) : (
               <ScrollView style={{width: '100%'}}>
-                 
-                 {/* --- 1. NEW: GAME SETTINGS --- */}
-                 <Text style={styles.sectionHeader}>Game Settings</Text>
-                 <Text style={styles.inputLabel}>Pool Name</Text>
-                 <TextInput style={styles.modalInput} value={settingsName} onChangeText={setSettingsName} placeholder="Pool Name" placeholderTextColor="#666" />
-                 
-                 <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
-                    <View style={{flex: 1, marginRight: 5}}>
-                        <Text style={styles.inputLabel}>Away Team</Text>
-                        <TextInput style={styles.modalInput} value={settingsTop} onChangeText={setSettingsTop} placeholder="Away" placeholderTextColor="#666" />
-                    </View>
-                    <View style={{flex: 1, marginLeft: 5}}>
-                        <Text style={styles.inputLabel}>Home Team</Text>
-                        <TextInput style={styles.modalInput} value={settingsLeft} onChangeText={setSettingsLeft} placeholder="Home" placeholderTextColor="#666" />
-                    </View>
-                 </View>
-                 <Button title="Save Settings" color={THEME.primary} onPress={handleUpdateSettings} />
-
-                 <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
-
-                 {/* 2. GAME SCORES */}
                  <Text style={styles.sectionHeader}>Game Scores</Text>
                  {['q1','q2','q3','final'].map(q => (
                    <View key={q} style={styles.scoreRow}>
@@ -398,15 +371,11 @@ export default function GameScreen({ route, navigation }) {
                    </View>
                  ))}
                  <Button title="Update Scores" color={THEME.accent} onPress={handleSaveScores} />
-                 
                  <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
-                 
-                 {/* 3. GAME SETUP */}
-                 <Text style={styles.sectionHeader}>Grid Setup</Text>
+                 <Text style={styles.sectionHeader}>Game Setup</Text>
                  <TouchableOpacity style={styles.actionBtn} onPress={handleRandomizeNumbers}>
                     <Text style={styles.actionBtnText}>🎲 Randomize Numbers</Text>
                  </TouchableOpacity>
-                 
                  <View style={{height: 20}}/>
                  <Button title="Log Out" color="#444" onPress={() => { signOut(auth); setShowAdminModal(false); }} />
                  <View style={{height: 10}}/><Button title="Close Menu" color="#666" onPress={() => setShowAdminModal(false)} />
@@ -419,3 +388,53 @@ export default function GameScreen({ route, navigation }) {
     </SafeAreaView>
   );
 }
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: THEME.bg },
+  scoreboard: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: THEME.card, borderBottomWidth: 1, borderColor: THEME.border },
+  teamBadgeText: { fontWeight: 'bold', fontSize: 12, textTransform: 'uppercase' },
+  bigScore: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
+  vsText: { color: '#666', fontWeight: 'bold', fontSize: 14, marginHorizontal: 15 },
+  tabBar: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#333' },
+  qTab: { flex: 1, paddingVertical: 12, alignItems: 'center', backgroundColor: THEME.card },
+  qTabActive: { borderBottomWidth: 3, borderColor: THEME.accent, backgroundColor: '#252525' },
+  qTabText: { color: '#666', fontWeight: 'bold' },
+  qTabTextActive: { color: THEME.accent },
+  centeredView: { flex: 1, alignItems: 'center' },
+  boardConstrainer: { width: '100%', maxWidth: 500, flex: 1, paddingBottom: 40 },
+  axisLabel: { fontWeight: 'bold', fontSize: 16 },
+  leftLabelContainer: { justifyContent: 'center', alignItems: 'center', width: 80, backgroundColor: 'transparent', zIndex: 1 },
+  teamLabelLeft: { fontWeight: 'bold', fontSize: 16, width: 260, textAlign: 'center', transform: [{ rotate: '-90deg' }] },
+  fabRight: { position: 'absolute', bottom: 30, right: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  fabLeft: { position: 'absolute', bottom: 30, left: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  
+  // 5. NEW SHARE BUTTON STYLE
+  fabShare: { 
+    position: 'absolute', 
+    top: 130, // Adjust this based on header height
+    right: 20, 
+    width: 40, height: 40, 
+    borderRadius: 20, 
+    backgroundColor: THEME.primary, 
+    justifyContent: 'center', alignItems: 'center', 
+    elevation: 5, shadowColor: THEME.primary, shadowOpacity: 0.5 
+  },
+
+  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
+  detailCard: { width: 300, backgroundColor: '#1E1E1E', borderRadius: 12, padding: 30, borderWidth: 2, borderColor: THEME.primary, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.8, shadowRadius: 25, elevation: 20, maxHeight: '80%' },
+  detailTitle: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#333', width: '100%', textAlign: 'center', paddingBottom: 15 },
+  modalInput: { width: '100%', backgroundColor: '#333', color: '#fff', padding: 12, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#555' },
+  sectionHeader: { color: '#888', marginTop: 10, marginBottom: 10, fontSize: 12, textTransform: 'uppercase', alignSelf: 'flex-start', fontWeight: 'bold' },
+  scoreRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, justifyContent: 'space-between', width: '100%' },
+  scoreLabel: { color: '#fff', width: 40, fontWeight: 'bold' },
+  smallScoreInput: { backgroundColor: '#222', color: '#fff', width: '35%', textAlign: 'center', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#444' },
+  actionBtn: { backgroundColor: THEME.card, padding: 15, borderRadius: 8, borderWidth: 1, borderColor: THEME.gold, alignItems: 'center', width: '100%' },
+  actionBtnText: { color: THEME.gold, fontWeight: 'bold' },
+  ticketContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', backgroundColor: '#222', borderRadius: 10, padding: 15, marginBottom: 15, borderWidth: 1, borderColor: '#444' },
+  ticketColumn: { alignItems: 'center', flex: 1 },
+  ticketDivider: { width: 1, backgroundColor: '#444', height: '100%' },
+  ticketLabel: { color: '#888', fontSize: 10, fontWeight: 'bold', marginBottom: 5 },
+  ticketNumber: { color: THEME.gold, fontSize: 32, fontWeight: 'bold' },
+  ownerName: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginBottom: 5 },
+  ownerNote: { color: '#aaa', fontSize: 14, fontStyle: 'italic', marginBottom: 15 }
+});
