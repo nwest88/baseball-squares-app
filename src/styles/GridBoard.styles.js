@@ -1,8 +1,10 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform, StatusBar } from 'react-native';
 import { THEME } from '../theme';
 
 export const styles = StyleSheet.create({
-  container: { flex: 1 }, 
+  container: { 
+    flex: 1,
+    backgroundColor: THEME.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0},
   cornerCell: { justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderBottomWidth: 1, borderColor: '#333' },
   headerCell: { justifyContent: 'center', alignItems: 'center', backgroundColor: '#222', borderWidth: 1, borderColor: '#444' },
   headerText: { color: THEME.gold, fontWeight: 'bold', fontSize: 16 },

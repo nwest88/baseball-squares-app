@@ -1,8 +1,9 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform, StatusBar } from 'react-native';
 import { THEME } from '../theme';
 
+
 export const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: THEME.bg },
+  container: { flex: 1, backgroundColor: THEME.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0},
   header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderColor: THEME.border },
   backBtn: { color: THEME.primary, fontSize: 16 },
   title: { color: '#fff', fontSize: 18, fontWeight: 'bold' },

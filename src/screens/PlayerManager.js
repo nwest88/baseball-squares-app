@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, SafeAreaView, TouchableOpacity, FlatList, TextInput, Alert, Button, KeyboardAvoidingView, Platform, Modal, Switch } from 'react-native';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
@@ -290,6 +290,7 @@ export default function PlayerManager({ route, navigation }) {
                 data={getPlayerStats()}
                 keyExtractor={item => item.name}
                 contentContainerStyle={{paddingBottom: 20}}
+                showsVerticalScrollIndicator={false}
                 renderItem={({item}) => (
                     <TouchableOpacity 
                         style={styles.playerRow}

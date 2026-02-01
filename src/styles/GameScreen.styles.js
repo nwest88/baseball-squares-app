@@ -1,9 +1,14 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform, StatusBar } from 'react-native';
 import { THEME } from '../theme';
 
 export const styles = StyleSheet.create({
   // ... (Keep existing container, scoreboard, tab, board styles same as before) ...
-  container: { flex: 1, backgroundColor: THEME.bg },
+  container: { 
+    flex: 1, 
+    backgroundColor: THEME.bg,
+    // --- FIX: Add padding ONLY on Android to clear the notification bar ---
+    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0
+  },
   scoreboard: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: THEME.card, borderBottomWidth: 1, borderColor: THEME.border },
   teamBadgeText: { fontWeight: 'bold', fontSize: 12, textTransform: 'uppercase' },
   bigScore: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
@@ -14,7 +19,17 @@ export const styles = StyleSheet.create({
   qTabText: { color: '#666', fontWeight: 'bold' },
   qTabTextActive: { color: THEME.accent },
   centeredView: { flex: 1, alignItems: 'center' },
-  boardConstrainer: { width: '100%', maxWidth: 500, flex: 1, paddingBottom: 40, alignSelf: 'center', alignItems: 'center' },
+  
+  // --- FIX: Revert to 100% width to fix "Sliver" bug. Use maxWidth to constrain on desktop. ---
+  boardConstrainer: { 
+    width: '100%',     // Always take full available width
+    maxWidth: 600,     // Cap it for desktop users so it doesn't look stretched
+    flex: 1, 
+    paddingBottom: 40, 
+    alignSelf: 'center',
+    alignItems: 'stretch' // Ensure children fill the width
+  },
+  
   axisLabel: { fontWeight: 'bold', fontSize: 16 },
   leftLabelContainer: { justifyContent: 'center', alignItems: 'center', width: 100, backgroundColor: 'transparent', zIndex: 1 },
   teamLabelLeft: { fontWeight: 'bold', fontSize: 16, width: 260, textAlign: 'center', transform: [{ rotate: '-90deg' }] },
@@ -31,7 +46,23 @@ export const styles = StyleSheet.create({
 
   // ... (Keep existing modal styles) ...
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
-  detailCard: { width: 300, backgroundColor: '#1E1E1E', borderRadius: 12, padding: 30, borderWidth: 2, borderColor: THEME.primary, alignItems: 'center', shadowColor: "#000", shadowOffset: { width: 0, height: 10 }, shadowOpacity: 0.8, shadowRadius: 25, elevation: 20, maxHeight: '80%' },
+  detailCard: { 
+    width: 300, 
+    backgroundColor: '#1E1E1E', 
+    borderRadius: 12, 
+    padding: 30, 
+    borderWidth: 2, 
+    borderColor: THEME.primary, 
+    alignItems: 'center', 
+    shadowColor: "#000", 
+    shadowOffset: { width: 0, height: 10 }, 
+    shadowOpacity: 0.8, 
+    shadowRadius: 25, 
+    elevation: 20, 
+    maxHeight: '80%',
+    // Fix for Web Shadow Deprecation Warning
+    boxShadow: '0px 10px 25px rgba(0,0,0,0.8)'
+  },
   detailTitle: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#333', width: '100%', textAlign: 'center', paddingBottom: 15 },
   modalInput: { width: '100%', backgroundColor: '#333', color: '#fff', padding: 12, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#555' },
   sectionHeader: { color: '#888', marginTop: 10, marginBottom: 10, fontSize: 12, textTransform: 'uppercase', alignSelf: 'flex-start', fontWeight: 'bold' },
