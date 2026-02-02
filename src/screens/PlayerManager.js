@@ -1,12 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, SafeAreaView, TouchableOpacity, FlatList, TextInput, Alert, Button, KeyboardAvoidingView, Platform, Modal, Switch } from 'react-native';
-import { doc, onSnapshot, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth'; // <--- Added import for auth check
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
 import { styles } from '../styles/PlayerManager.styles';
-// 1. IMPORT THE NEW FUNCTION
 import { deletePlayerFromGrid, updatePlayerAllocation } from '../utils/gameFunctions';
+
+// --- AI IMPORTS ---
+import { pickAndProcessImage } from '../services/ImageImportService';
+import ImportReviewModal from '../components/ImportReviewModal';
+import { Ionicons } from '@expo/vector-icons'; 
 
 export default function PlayerManager({ route, navigation }) {
   const { gameId } = route.params;
@@ -25,6 +30,18 @@ export default function PlayerManager({ route, navigation }) {
   const [isReshuffle, setIsReshuffle] = useState(false); 
   
   const [showEditModal, setShowEditModal] = useState(false);
+
+  // --- AI STATE ---
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [scannedPlayers, setScannedPlayers] = useState([]);
+
+  // --- ADMIN CHECK ---
+  const auth = getAuth();
+  const currentUser = auth.currentUser;
+  // We assume 'adminId' is the field in your squares_pool document that stores the creator's ID.
+  // If your field is named 'ownerId' or 'creatorId', swap that here.
+  const isGameAdmin = currentUser?.uid && gridData?.adminId === currentUser.uid;
 
   useEffect(() => {
     const unsub = onSnapshot(doc(db, "squares_pool", gameId), (docSnap) => {
@@ -121,6 +138,94 @@ export default function PlayerManager({ route, navigation }) {
     }
   };
 
+  // --- AI HANDLERS ---
+  const startImport = async () => {
+    setImportModalVisible(true);
+    setIsImporting(true);
+    setScannedPlayers([]);
+
+    try {
+      // Call our service
+      const data = await pickAndProcessImage();
+      
+      if (data) {
+        setScannedPlayers(data);
+      } else {
+        // Cancelled
+        setImportModalVisible(false);
+      }
+    } catch (error) {
+      Alert.alert("Import Failed", "We couldn't read that image. Please try again.");
+      setImportModalVisible(false);
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const confirmImport = async () => {
+    // 1. Find all available keys
+    const cols = gridData.gridCols || 10;
+    const rows = gridData.gridRows || 10;
+    const emptyKeys = [];
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const key = `${r}-${c}`;
+        if (!gridData[key]) emptyKeys.push(key);
+      }
+    }
+
+    // Shuffle them so assignment is random
+    const shuffledAvailable = emptyKeys.sort(() => 0.5 - Math.random());
+    
+    let currentIndex = 0;
+    const updateObj = {};
+    let partialImport = false;
+
+    // 2. Loop through imported players and assign squares
+    for (const player of scannedPlayers) {
+      const needed = parseInt(player.count) || 1;
+      
+      // Do we have enough space left in our shuffled deck?
+      if (currentIndex + needed > shuffledAvailable.length) {
+        partialImport = true;
+        // Assign whatever is left? Or skip? Let's assign remaining.
+        const remaining = shuffledAvailable.length - currentIndex;
+        if (remaining <= 0) break; 
+      }
+
+      // Grab the keys
+      const keysToAssign = shuffledAvailable.slice(currentIndex, currentIndex + needed);
+      
+      const playerData = { name: player.name, email: "", note: "Imported via AI" };
+      keysToAssign.forEach(key => {
+        updateObj[key] = playerData;
+      });
+
+      currentIndex += needed;
+    }
+
+    if (Object.keys(updateObj).length === 0 && scannedPlayers.length > 0) {
+      Alert.alert("Board Full", "No empty squares to assign players to.");
+      setImportModalVisible(false);
+      return;
+    }
+
+    // 3. Commit to Firestore
+    try {
+      await updateDoc(doc(db, "squares_pool", gameId), updateObj);
+      setImportModalVisible(false);
+      
+      if (partialImport) {
+        Alert.alert("Partial Import", "Ran out of squares! Some players were not fully assigned.");
+      } else {
+        Alert.alert("Success", `Imported ${scannedPlayers.length} players!`);
+      }
+    } catch (e) {
+      Alert.alert("Error", e.message);
+    }
+  };
+  // -------------------
+
   const openEditModal = (player) => {
       setSelectedPlayer(player);
       setEditNote(player.note || "");
@@ -160,14 +265,14 @@ export default function PlayerManager({ route, navigation }) {
                   const key = `${r}-${c}`;
                   const cell = gridData[key];
                   if (cell) {
-                     const cellName = (typeof cell === 'object') ? cell.name : cell;
-                     if (cellName === selectedPlayer.name) {
-                         const currentData = (typeof cell === 'object') ? cell : { name: cell, email: "" };
-                         // Only update if note changed
-                         if (currentData.note !== editNote) {
-                             updates[key] = { ...currentData, note: editNote };
-                         }
-                     }
+                      const cellName = (typeof cell === 'object') ? cell.name : cell;
+                      if (cellName === selectedPlayer.name) {
+                          const currentData = (typeof cell === 'object') ? cell : { name: cell, email: "" };
+                          // Only update if note changed
+                          if (currentData.note !== editNote) {
+                              updates[key] = { ...currentData, note: editNote };
+                          }
+                      }
                   }
                 }
              }
@@ -277,6 +382,18 @@ export default function PlayerManager({ route, navigation }) {
                         {stats.isFull ? "BOARD FULL" : "Assign Squares"}
                     </Text>
                 </TouchableOpacity>
+
+                {/* --- AI BUTTON --- */}
+                {/* Changed: Added check for isGameAdmin */}
+                {!stats.isFull && isGameAdmin && (
+                  <TouchableOpacity 
+                    style={[styles.addBtn, { backgroundColor: THEME.secondary, marginTop: 12, flexDirection: 'row', justifyContent: 'center' }]} 
+                    onPress={startImport}
+                  >
+                    <Ionicons name="camera" size={20} color="white" style={{marginRight: 8}} />
+                    <Text style={styles.addBtnText}>Import via Photo</Text>
+                  </TouchableOpacity>
+                )}
               </View>
           )}
 
@@ -290,6 +407,7 @@ export default function PlayerManager({ route, navigation }) {
                 data={getPlayerStats()}
                 keyExtractor={item => item.name}
                 contentContainerStyle={{paddingBottom: 20}}
+                showsVerticalScrollIndicator={false}
                 renderItem={({item}) => (
                     <TouchableOpacity 
                         style={styles.playerRow}
@@ -329,7 +447,7 @@ export default function PlayerManager({ route, navigation }) {
                         value={editCount}
                         onChangeText={setEditCount}
                         keyboardType="numeric"
-                     />
+                      />
 
                      <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 20, justifyContent: 'space-between'}}>
                         <View style={{flex: 1}}>
@@ -350,7 +468,7 @@ export default function PlayerManager({ route, navigation }) {
                         placeholderTextColor="#666"
                         value={editNote}
                         onChangeText={setEditNote}
-                     />
+                      />
                      
                      <Button title="Save Changes" color={THEME.primary} onPress={handleSaveChanges} />
                      <View style={{height: 10}}/>
@@ -363,6 +481,15 @@ export default function PlayerManager({ route, navigation }) {
                  </View>
              </View>
           </Modal>
+
+          {/* --- AI REVIEW MODAL --- */}
+          <ImportReviewModal 
+            visible={importModalVisible}
+            isLoading={isImporting}
+            importedPlayers={scannedPlayers}
+            onClose={() => setImportModalVisible(false)}
+            onConfirm={confirmImport}
+          />
 
       </KeyboardAvoidingView>
     </SafeAreaView>

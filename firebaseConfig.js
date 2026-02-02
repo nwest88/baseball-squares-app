@@ -1,6 +1,8 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth';
+import { initializeAuth, getReactNativePersistence, getAuth } from 'firebase/auth';
+import ReactNativeAsyncStorage from '@react-native-async-storage/async-storage';
+import { Platform } from 'react-native';
 
 // Your Official Keys
 const firebaseConfig = {
@@ -18,4 +20,19 @@ const app = initializeApp(firebaseConfig);
 
 // Export the tools for the App to use
 export const db = getFirestore(app);
-export const auth = getAuth(app);
+
+// Initialize Auth with Persistence (Platform Aware)
+// FIX: Logic to separate Web (Chrome) from Mobile (iOS/Android) to prevent crashing
+let auth;
+
+if (Platform.OS === 'web') {
+  // On the web, Firebase handles persistence automatically (localStorage/indexedDB)
+  auth = getAuth(app);
+} else {
+  // On mobile, we specifically need AsyncStorage to remember the user
+  auth = initializeAuth(app, {
+    persistence: getReactNativePersistence(ReactNativeAsyncStorage)
+  });
+}
+
+export { auth };

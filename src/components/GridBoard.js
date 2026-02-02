@@ -42,7 +42,13 @@ export default function GridBoard({
 
   return (
     <View style={styles.container}>
-      <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={{paddingBottom: 50}}>
+      <ScrollView 
+        showsVerticalScrollIndicator={false} 
+        contentContainerStyle={{paddingBottom: 50}}
+        // --- FIX: STOP BOUNCING ---
+        bounces={false} 
+        overScrollMode="never"
+      >
         
         {/* Removed internal centering to fix layout jitter. 
             The parent container (GameScreen) now handles the centering. */}
@@ -68,6 +74,9 @@ export default function GridBoard({
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false}
+            // --- FIX: STOP BOUNCING ---
+            bounces={false}
+            overScrollMode="never"
             // Removed contentContainerStyle centering here as well
           >
             <View>

@@ -1,7 +1,8 @@
 import React from 'react';
-import { View, StyleSheet, Text } from 'react-native';
+import { View, Text } from 'react-native';
 import { THEME } from '../theme';
 import Logo from './logo';
+import { styles } from '../styles/BrandHeader.styles'; // <--- Import the shared fixed styles
 
 export default function BrandHeader({ title }) {
   return (
@@ -22,51 +23,3 @@ export default function BrandHeader({ title }) {
     </View>
   );
 }
-
-const styles = StyleSheet.create({
-  headerContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 15,
-    paddingHorizontal: 20,
-    backgroundColor: THEME.bg,
-    borderBottomWidth: 1,
-    borderColor: THEME.border,
-  },
-  logoWrapper: {
-    marginRight: 10,
-    // Optional: Add a shadow/glow to the logo
-    shadowColor: THEME.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
-  },
-  logoTextContainer: {
-    flexDirection: 'column',
-  },
-  logoTextMain: {
-    color: THEME.primary,
-    fontWeight: '900',
-    fontSize: 16,
-    letterSpacing: 1,
-    lineHeight: 16,
-  },
-  logoTextSub: {
-    color: '#FFF',
-    fontWeight: 'bold',
-    fontSize: 10,
-    letterSpacing: 2,
-  },
-  divider: {
-    width: 1,
-    height: 24,
-    backgroundColor: '#333',
-    marginHorizontal: 15,
-  },
-  screenTitle: {
-    color: THEME.subtext,
-    fontSize: 16,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-});

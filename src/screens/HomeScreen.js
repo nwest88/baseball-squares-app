@@ -171,12 +171,14 @@ export default function HomeScreen({ navigation }) {
   return (
     <SafeAreaView style={styles.container}>
       
+      {/* --- FIX: Header is now OUTSIDE the ScrollView so it's full width --- */}
+      <BrandHeader title="Dashboard" />
+
       {/* ScrollView Wrapper (Instead of SectionList) */}
       <ScrollView 
         contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false} // <--- HIDES THE UGLY SCROLLBAR
       >
-        <BrandHeader title="Dashboard" />
         
         {loading ? (
           <View style={styles.loadingContainer}>
