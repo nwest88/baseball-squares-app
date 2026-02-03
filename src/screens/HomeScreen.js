@@ -1,26 +1,28 @@
-import React, { useState, useEffect } from 'react'; 
+import React, { useState, useEffect, useCallback } from 'react'; 
 import { View, Text, TouchableOpacity, SafeAreaView, ActivityIndicator, ScrollView, useWindowDimensions, Platform } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore'; 
 import { getAuth, onAuthStateChanged } from 'firebase/auth'; 
+import { useFocusEffect } from '@react-navigation/native'; 
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
 import GamePoolCard from '../components/GamePoolCard'; 
 import { styles } from '../styles/HomeScreen.styles'; 
+import { getFollowedGames } from '../utils/storage';
 
 export default function HomeScreen({ navigation }) {
+  const [allData, setAllData] = useState([]); // Raw Firebase Data
   const [myPools, setMyPools] = useState([]);
   const [joinedPools, setJoinedPools] = useState([]); 
   const [publicPools, setPublicPools] = useState([]);
   const [loading, setLoading] = useState(true);
   const [user, setUser] = useState(null);
   
-  // Responsive layout hook
   const { width } = useWindowDimensions();
-  // Simple breakpoint: > 768px is "Web/Tablet" mode
-  const isWideScreen = width > 768; 
+  const isWide = width > 768; 
 
+  // --- A. LISTEN TO FIREBASE (Once) ---
   useEffect(() => {
     const auth = getAuth();
     const unsubAuth = onAuthStateChanged(auth, (u) => {
@@ -28,44 +30,59 @@ export default function HomeScreen({ navigation }) {
     });
 
     const q = query(collection(db, "squares_pool"), orderBy("createdAt", "desc")); 
-    
     const unsubData = onSnapshot(q, (snapshot) => {
-      const allGames = snapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      const currentUserId = auth.currentUser?.uid;
-
-      if (currentUserId) {
-          // 1. POOLS I MANAGE (Show all, even private ones)
-          const mine = allGames.filter(g => g.adminId === currentUserId);
-          // 2. POOLS I'M IN (Placeholder for now)
-          const joined = [];  
-          // 3. PUBLIC POOLS (CRITICAL FIX)
-          // Exclude mine AND exclude private ones
-          const others = allGames.filter(g => {
-            const isMine = g.adminId === currentUserId;
-            // Check for 'false' explicitly because legacy data might be undefined (default public)
-            const isPrivate = g.isPublic === false;
-            return !isMine && !isPrivate;
-          });
-          
-          setMyPools(mine);
-          setJoinedPools(joined);
-          setPublicPools(others);
-      } else {
-          setMyPools([]);
-          setJoinedPools([]);
-          // Guest View: Only show Public games
-          setPublicPools(allGames.filter(g => g.isPublic !== false));
-      }
-      
+      const games = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setAllData(games);
       setLoading(false);
     });
 
     return () => { unsubAuth(); unsubData(); };
   }, []);
+
+  // --- B. FILTER LOGIC (Runs on Load AND Focus) ---
+  // We wrap this in useFocusEffect so it re-runs when you come back from a game
+  // (because you might have just followed a new pool)
+  useFocusEffect(
+    useCallback(() => {
+        if (loading || allData.length === 0) return;
+
+        const filterGames = async () => {
+            const currentUserId = getAuth().currentUser?.uid;
+            
+            // 1. Get Followed IDs from Local Storage
+            const followedIds = await getFollowedGames();
+
+            // 2. Filter Buckets
+            let mine = [];
+            let joined = [];
+            let others = [];
+
+            if (currentUserId) {
+                mine = allData.filter(g => g.adminId === currentUserId);
+                
+                // Joined = IDs in storage AND NOT my own pools
+                joined = allData.filter(g => followedIds.includes(g.id) && g.adminId !== currentUserId);
+                
+                // Public = Not Mine, Not Joined, And Public
+                others = allData.filter(g => 
+                    g.adminId !== currentUserId && 
+                    !followedIds.includes(g.id) && 
+                    g.isPublic !== false
+                );
+            } else {
+                // Guest Logic
+                joined = allData.filter(g => followedIds.includes(g.id));
+                others = allData.filter(g => !followedIds.includes(g.id) && g.isPublic !== false);
+            }
+
+            setMyPools(mine);
+            setJoinedPools(joined);
+            setPublicPools(others);
+        };
+
+        filterGames();
+    }, [allData, loading, user]) // Re-run if data or user changes
+  );
 
   const mapGameToCardData = (game) => {
       const cols = game.gridCols || 10;
@@ -75,44 +92,32 @@ export default function HomeScreen({ navigation }) {
       
       let soldCount = 0;
       Object.keys(game).forEach(key => {
-          if (key.match(/^\d+-\d+$/) && game[key]) {
-              soldCount++;
-          }
+          if (key.match(/^\d+-\d+$/) && game[key]) soldCount++;
       });
 
-      // 1. Calculate Gross Pot (Total Potential)
       const grossPot = totalSquares * price;
-      
-      // 2. Handle Host Cut Logic
       let netPot = grossPot;
       let displayHost = game.hostName || "Host";
 
       if (game.hostCut) {
           const cutString = game.hostCut.toString().trim();
           let cutAmount = 0;
-
           if (cutString.includes('%')) {
-              // Percentage Cut (e.g. "50%")
               const percentage = parseFloat(cutString.replace('%', ''));
               if (!isNaN(percentage)) {
                   cutAmount = grossPot * (percentage / 100);
                   displayHost += ` • ${cutString} Cut`; 
               }
           } else {
-              // Flat Amount (e.g. "500" or "$500")
               const flat = parseFloat(cutString.replace(/[^0-9.]/g, ''));
               if (!isNaN(flat)) {
                   cutAmount = flat;
-                  if (cutAmount > 0) {
-                      displayHost += ` • $${flat} Cut`;
-                  }
+                  if (cutAmount > 0) displayHost += ` • $${flat} Cut`;
               }
           }
-          // Ensure pot doesn't go below zero
           netPot = Math.max(0, grossPot - cutAmount);
       }
 
-      // 3. Calculate Payouts based on NET Pot
       const qtrPayout = netPot > 0 ? netPot / 4 : 0; 
 
       return {
@@ -123,32 +128,23 @@ export default function HomeScreen({ navigation }) {
           squaresSold: soldCount,
           totalSquares: totalSquares,
           costPerSquare: price,
-          totalPot: netPot, // Displaying the WINNABLE amount
-          payouts: {
-              q1: qtrPayout,
-              q2: qtrPayout,
-              q3: qtrPayout,
-              final: qtrPayout
-          }
+          totalPot: netPot,
+          payouts: { q1: qtrPayout, q2: qtrPayout, q3: qtrPayout, final: qtrPayout }
       };
   };
 
-  // Helper Component to Render a Grid Section
   const PoolSection = ({ title, data, showIfEmpty = false }) => {
     if (data.length === 0 && !showIfEmpty) return null;
 
     return (
       <View style={{ marginBottom: 30 }}>
         <Text style={styles.sectionHeader}>{title}</Text>
-        
-        {/* GRID CONTAINER */}
         <View style={{ 
-            flexDirection: isWideScreen ? 'row' : 'column', 
+            flexDirection: isWide ? 'row' : 'column', 
             flexWrap: 'wrap', 
-            gap: 15 // Adds space between grid items
+            gap: 15,
+            alignItems: 'stretch'
         }}>
-            
-            {/* EMPTY STATE */}
             {data.length === 0 && showIfEmpty ? (
                 <View style={[styles.emptyContainer, { width: '100%' }]}>
                     <Text style={styles.emptyText}>You don't manage any pools yet.</Text>
@@ -157,19 +153,16 @@ export default function HomeScreen({ navigation }) {
                     </TouchableOpacity>
                 </View>
             ) : (
-                // CARD MAPPING
                 data.map(item => (
                     <TouchableOpacity 
                         key={item.id}
                         activeOpacity={0.9}
                         onPress={() => navigation.navigate('Game', { gameId: item.id })}
-                        style={
-                            isWideScreen 
-                            ? { width: '32%', minWidth: 350 } // 3-Column Grid on Laptop
-                            : { width: '100%' }               // 1-Column Stack on Phone
-                        }
+                        style={isWide ? { width: '32%', minWidth: 350 } : { width: '100%' }}
                     >
-                        <GamePoolCard data={mapGameToCardData(item)} />
+                        <View style={{ height: '100%' }}>
+                            <GamePoolCard data={mapGameToCardData(item)} />
+                        </View>
                     </TouchableOpacity>
                 ))
             )}
@@ -180,38 +173,33 @@ export default function HomeScreen({ navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      
-      {/* --- FIX: Header is now OUTSIDE the ScrollView so it's full width --- */}
-      <BrandHeader title="Dashboard" />
-
-      {/* ScrollView Wrapper (Instead of SectionList) */}
-      <ScrollView 
-        contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
-        showsVerticalScrollIndicator={false} // <--- HIDES THE UGLY SCROLLBAR
-      >
+      <View style={Platform.OS === 'web' ? { maxWidth: 800, width: '100%', alignSelf: 'center', flex: 1 } : { flex: 1 }}>
+        <BrandHeader title="Dashboard" />
         
         {loading ? (
           <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={THEME.primary} />
           </View>
         ) : (
-          <View>
-             {/* Render Sections Manually */}
+          <ScrollView 
+            contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
+            showsVerticalScrollIndicator={false}
+          >
              <PoolSection title="Pools I Manage" data={myPools} showIfEmpty={true} />
+             {/* 3. THIS SECTION NOW WORKS */}
              <PoolSection title="Pools I'm In" data={joinedPools} />
              <PoolSection title="Public Pools" data={publicPools} />
-          </View>
+          </ScrollView>
         )}
-      </ScrollView>
 
-      <TouchableOpacity 
-        style={styles.fab} 
-        onPress={() => navigation.navigate('Create')}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.fabText}>+</Text>
-      </TouchableOpacity>
-
+        <TouchableOpacity 
+          style={styles.fab} 
+          onPress={() => navigation.navigate('Create')}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.fabText}>+</Text>
+        </TouchableOpacity>
+      </View>
       <StatusBar style="light" />
     </SafeAreaView>
   );

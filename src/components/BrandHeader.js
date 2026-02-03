@@ -7,7 +7,6 @@ import { styles } from '../styles/BrandHeader.styles'; // <--- Import the shared
 export default function BrandHeader({ title }) {
   return (
     <View style={styles.headerContainer}>
-      {/* Use the Logo Component */}
       <View style={styles.logoWrapper}>
         <Logo width={35} height={35} color={THEME.primary} />
       </View>
@@ -16,8 +15,6 @@ export default function BrandHeader({ title }) {
         <Text style={styles.logoTextMain}>QUIK SQUARES</Text>
         <Text style={styles.logoTextSub}>Pool</Text>
       </View>
-
-      {/* Screen Title Divider */}
       {title && <View style={styles.divider} />}
       {title && <Text style={styles.screenTitle}>{title}</Text>}
     </View>

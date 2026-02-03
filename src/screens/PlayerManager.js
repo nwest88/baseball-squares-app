@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, SafeAreaView, TouchableOpacity, FlatList, TextInput, Alert, Button, KeyboardAvoidingView, Platform, Modal, Switch } from 'react-native';
 import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
-import { getAuth } from 'firebase/auth'; // <--- Added import for auth check
+import { getAuth, onAuthStateChanged } from 'firebase/auth'; 
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
@@ -18,6 +18,9 @@ export default function PlayerManager({ route, navigation }) {
   const [gridData, setGridData] = useState({});
   const [loading, setLoading] = useState(true);
   
+  // USER STATE (For Admin Check)
+  const [user, setUser] = useState(null);
+
   const [name, setName] = useState("");
   const [count, setCount] = useState("");
   const [note, setNote] = useState("");
@@ -25,7 +28,7 @@ export default function PlayerManager({ route, navigation }) {
   const [selectedPlayer, setSelectedPlayer] = useState(null);
   const [editNote, setEditNote] = useState("");
   
-  // NEW: Edit Count State
+  // Edit Count State
   const [editCount, setEditCount] = useState(""); 
   const [isReshuffle, setIsReshuffle] = useState(false); 
   
@@ -36,22 +39,27 @@ export default function PlayerManager({ route, navigation }) {
   const [isImporting, setIsImporting] = useState(false);
   const [scannedPlayers, setScannedPlayers] = useState([]);
 
-  // --- ADMIN CHECK ---
-  const auth = getAuth();
-  const currentUser = auth.currentUser;
-  // We assume 'adminId' is the field in your squares_pool document that stores the creator's ID.
-  // If your field is named 'ownerId' or 'creatorId', swap that here.
-  const isGameAdmin = currentUser?.uid && gridData?.adminId === currentUser.uid;
-
   useEffect(() => {
-    const unsub = onSnapshot(doc(db, "squares_pool", gameId), (docSnap) => {
+    // 1. Listen for Game Data
+    const unsubDocs = onSnapshot(doc(db, "squares_pool", gameId), (docSnap) => {
       if (docSnap.exists()) {
         setGridData(docSnap.data());
       }
       setLoading(false);
     });
-    return () => unsub();
+
+    // 2. Listen for Auth State
+    const auth = getAuth();
+    const unsubAuth = onAuthStateChanged(auth, (u) => {
+        setUser(u);
+    });
+
+    return () => { unsubDocs(); unsubAuth(); };
   }, [gameId]);
+
+  // --- ADMIN PERMISSION CHECK ---
+  // Must have a user, a grid with an adminId, and they must match.
+  const isAdmin = user && gridData.adminId && user.uid === gridData.adminId;
 
   const handleBack = () => {
       if (navigation.canGoBack()) {
@@ -107,12 +115,16 @@ export default function PlayerManager({ route, navigation }) {
   };
 
   const handleAutoAssign = async () => {
+    // Security Gate
+    if (!isAdmin) return;
+
     if (stats.isFull) return; 
     if (!name.trim()) { Alert.alert("Error", "Name required"); return; }
     const numSquares = parseInt(count);
     if (isNaN(numSquares) || numSquares < 1) { Alert.alert("Error", "Invalid number"); return; }
     if (numSquares > stats.remaining) { Alert.alert("No Room", `Only ${stats.remaining} squares available.`); return; }
 
+    // Manual Inline Logic to match your version
     const emptyKeys = [];
     const cols = gridData.gridCols || 10;
     const rows = gridData.gridRows || 10;
@@ -140,18 +152,18 @@ export default function PlayerManager({ route, navigation }) {
 
   // --- AI HANDLERS ---
   const startImport = async () => {
+    // Security Gate
+    if (!isAdmin) return;
+
     setImportModalVisible(true);
     setIsImporting(true);
     setScannedPlayers([]);
 
     try {
-      // Call our service
       const data = await pickAndProcessImage();
-      
       if (data) {
         setScannedPlayers(data);
       } else {
-        // Cancelled
         setImportModalVisible(false);
       }
     } catch (error) {
@@ -163,7 +175,6 @@ export default function PlayerManager({ route, navigation }) {
   };
 
   const confirmImport = async () => {
-    // 1. Find all available keys
     const cols = gridData.gridCols || 10;
     const rows = gridData.gridRows || 10;
     const emptyKeys = [];
@@ -174,28 +185,21 @@ export default function PlayerManager({ route, navigation }) {
       }
     }
 
-    // Shuffle them so assignment is random
     const shuffledAvailable = emptyKeys.sort(() => 0.5 - Math.random());
     
     let currentIndex = 0;
     const updateObj = {};
     let partialImport = false;
 
-    // 2. Loop through imported players and assign squares
     for (const player of scannedPlayers) {
       const needed = parseInt(player.count) || 1;
-      
-      // Do we have enough space left in our shuffled deck?
       if (currentIndex + needed > shuffledAvailable.length) {
         partialImport = true;
-        // Assign whatever is left? Or skip? Let's assign remaining.
         const remaining = shuffledAvailable.length - currentIndex;
         if (remaining <= 0) break; 
       }
 
-      // Grab the keys
       const keysToAssign = shuffledAvailable.slice(currentIndex, currentIndex + needed);
-      
       const playerData = { name: player.name, email: "", note: "Imported via AI" };
       keysToAssign.forEach(key => {
         updateObj[key] = playerData;
@@ -210,11 +214,9 @@ export default function PlayerManager({ route, navigation }) {
       return;
     }
 
-    // 3. Commit to Firestore
     try {
       await updateDoc(doc(db, "squares_pool", gameId), updateObj);
       setImportModalVisible(false);
-      
       if (partialImport) {
         Alert.alert("Partial Import", "Ran out of squares! Some players were not fully assigned.");
       } else {
@@ -227,10 +229,13 @@ export default function PlayerManager({ route, navigation }) {
   // -------------------
 
   const openEditModal = (player) => {
+      // Security Gate: Only allow if Admin
+      if (!isAdmin) return;
+
       setSelectedPlayer(player);
       setEditNote(player.note || "");
-      setEditCount(player.count.toString()); // Pre-fill Count
-      setIsReshuffle(false); // Reset toggle
+      setEditCount(player.count.toString()); 
+      setIsReshuffle(false); 
       setShowEditModal(true);
   };
 
@@ -238,41 +243,31 @@ export default function PlayerManager({ route, navigation }) {
       if (!selectedPlayer) return;
 
       try {
-          // 1. Update Notes (Bulk) - We still do this to ensure notes sync
-          const cols = gridData.gridCols || 10;
-          const rows = gridData.gridRows || 10;
-          const updates = {};
-          
-          // 2. Call the Allocator to handle Count/Reshuffle
-          // We pass 'selectedPlayer' object which has the *original* count, 
-          // and 'editCount' which is the *new* count.
-          // Note: We need to pass the full player object with email/note for the allocator to re-create squares
           const playerObj = { 
               name: selectedPlayer.name, 
               count: selectedPlayer.count, 
-              note: editNote, // Use NEW note
-              email: "" // We don't have email in the list view yet, can add later
+              note: editNote, 
+              email: "" 
           };
 
           await updatePlayerAllocation(db, gameId, gridData, playerObj, editCount, isReshuffle);
           
-          // If Reshuffle was off, but note changed, we need to ensure notes updated on existing squares
-          // The updatePlayerAllocation handles new/reshuffled ones, but static ones might need note updates.
-          // For simplicity in MVP: We loop and update notes separately if not reshuffling.
           if (!isReshuffle) {
+             const cols = gridData.gridCols || 10;
+             const rows = gridData.gridRows || 10;
+             const updates = {};
              for (let r = 0; r < rows; r++) {
                 for (let c = 0; c < cols; c++) {
                   const key = `${r}-${c}`;
                   const cell = gridData[key];
                   if (cell) {
-                      const cellName = (typeof cell === 'object') ? cell.name : cell;
-                      if (cellName === selectedPlayer.name) {
-                          const currentData = (typeof cell === 'object') ? cell : { name: cell, email: "" };
-                          // Only update if note changed
-                          if (currentData.note !== editNote) {
-                              updates[key] = { ...currentData, note: editNote };
-                          }
-                      }
+                     const cellName = (typeof cell === 'object') ? cell.name : cell;
+                     if (cellName === selectedPlayer.name) {
+                         const currentData = (typeof cell === 'object') ? cell : { name: cell, email: "" };
+                         if (currentData.note !== editNote) {
+                             updates[key] = { ...currentData, note: editNote };
+                         }
+                     }
                   }
                 }
              }
@@ -325,7 +320,8 @@ export default function PlayerManager({ route, navigation }) {
                 <Text style={styles.backBtn}>‹ Back to Game</Text>
             </TouchableOpacity>
             <Text style={styles.title}>
-                {gridData.assignmentMode === 'auto' ? 'Auto Manager' : 'Player Stats'}
+                {/* Dynamic Title based on Role */}
+                {isAdmin ? 'Auto Manager' : 'Player Roster'}
             </Text>
             <View style={{width: 50}} /> 
           </View>
@@ -345,8 +341,8 @@ export default function PlayerManager({ route, navigation }) {
              </Text>
           </View>
 
-          {/* AUTO ASSIGN FORM */}
-          {gridData.assignmentMode === 'auto' && (
+          {/* AUTO ASSIGN FORM - ONLY SHOW IF ADMIN */}
+          {gridData.assignmentMode === 'auto' && isAdmin && (
               <View style={[styles.formCard, stats.isFull && {opacity: 0.5}]}>
                 <Text style={styles.sectionTitle}>🎲 Add Player</Text>
                 <View style={styles.row}>
@@ -384,8 +380,7 @@ export default function PlayerManager({ route, navigation }) {
                 </TouchableOpacity>
 
                 {/* --- AI BUTTON --- */}
-                {/* Changed: Added check for isGameAdmin */}
-                {!stats.isFull && isGameAdmin && (
+                {!stats.isFull && (
                   <TouchableOpacity 
                     style={[styles.addBtn, { backgroundColor: THEME.secondary, marginTop: 12, flexDirection: 'row', justifyContent: 'center' }]} 
                     onPress={startImport}
@@ -412,6 +407,9 @@ export default function PlayerManager({ route, navigation }) {
                     <TouchableOpacity 
                         style={styles.playerRow}
                         onPress={() => openEditModal(item)}
+                        // DISABLE CLICK IF NOT ADMIN
+                        disabled={!isAdmin} 
+                        activeOpacity={isAdmin ? 0.7 : 1}
                     >
                         <View style={styles.avatar}>
                             <Text style={styles.avatarText}>{item.name.substring(0,2).toUpperCase()}</Text>
