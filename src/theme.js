@@ -13,7 +13,7 @@ export const THEME = {
 
   // --- 3. TEXT COLORS ---
   text: '#FFFFFF',    // Main Headings
-  subtext: '#A0A0A0', // Secondary info (Notes, subtitles)
+  subtext: '#ebebeb', // Secondary info (Notes, subtitles)
   gold: '#FFD700',    // Specific "Winning" text color
   error: '#FF4444',   // Error messages
 

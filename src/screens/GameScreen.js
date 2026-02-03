@@ -3,11 +3,14 @@ import { View, Text, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, A
 import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
+import { Ionicons } from '@expo/vector-icons'; 
 import { db, auth } from '../../firebaseConfig'; 
 import GridBoard from '../components/GridBoard'; 
 import { styles } from '../styles/GameScreen.styles'; 
 import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
+// 1. IMPORT STORAGE UTILS
+import { toggleFollowGame, isGameFollowed } from '../utils/storage';
 
 const DEFAULT_SCORES = {
   q1: { top: '', left: '' },
@@ -28,19 +31,20 @@ export default function GameScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(""); 
   
+  // FOLLOW STATE
+  const [isFollowing, setIsFollowing] = useState(false); // <--- NEW STATE
+
+  // ... (Keep existing states: Modals, Edit, Admin) ...
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [selectedDetails, setSelectedDetails] = useState(null);
-
   const [editingSquare, setEditingSquare] = useState(null); 
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editNote, setEditNote] = useState("");
-
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-
   const [settingsName, setSettingsName] = useState("");
   const [settingsHost, setSettingsHost] = useState(""); 
   const [settingsTop, setSettingsTop] = useState("");
@@ -50,6 +54,13 @@ export default function GameScreen({ route, navigation }) {
   const [settingsPublic, setSettingsPublic] = useState(true); 
 
   useEffect(() => {
+    // 2. CHECK FOLLOW STATUS ON LOAD
+    const checkFollow = async () => {
+        const following = await isGameFollowed(gameId);
+        setIsFollowing(following);
+    };
+    checkFollow();
+
     const unsubDocs = onSnapshot(doc(db, "squares_pool", gameId), (docSnap) => {
       if (docSnap.exists()) {
         const data = docSnap.data();
@@ -88,7 +99,18 @@ export default function GameScreen({ route, navigation }) {
     return () => { unsubDocs(); unsubAuth(); };
   }, [gameId, showAdminModal]); 
 
-  // ... (Keep existing helper functions: handleShare, handleSquarePress, openEditModal, saveSquareInfo, handleRandomizeNumbers, handleClearNumbers, handleUpdateSettings, handleSaveScores, updateScoreInput, getWinningCoords, getTeamColor, handleLogin) ...
+  // --- ACTIONS ---
+
+  const handleToggleFollow = async () => {
+      const newState = await toggleFollowGame(gameId);
+      setIsFollowing(newState);
+      if (newState) {
+          Alert.alert("Followed!", "This pool is now saved to your dashboard.");
+      } else {
+          Alert.alert("Unfollowed", "Removed from your dashboard.");
+      }
+  };
+
   const handleShare = async () => {
     const url = `https://baseball-squares-mvp.web.app/game/${gameId}`;
     const message = `Join my Squares Pool!\nGame ID: ${gameId}\n\nPlay here: ${url}`;
@@ -98,7 +120,10 @@ export default function GameScreen({ route, navigation }) {
   };
 
   const handleSquarePress = (data) => {
+    const isAdmin = user?.uid === gridData.adminId;
+
     if (data.owner) {
+        // ... (Keep existing View Details Logic) ...
         const topNum = gridData.topAxis ? gridData.topAxis[data.col] : '?';
         const leftNum = gridData.leftAxis ? gridData.leftAxis[data.row] : '?';
         const ownerName = (typeof data.owner === 'object') ? data.owner.name : data.owner;
@@ -113,6 +138,12 @@ export default function GameScreen({ route, navigation }) {
         setShowDetailsModal(true);
         return;
     }
+
+    if (!isAdmin && !isFollowing) {
+        Alert.alert("👀 Watcher Mode", "Please click the 'Follow' button (⭐) to join this pool and pick squares.");
+        return;
+    }
+
     const mode = gridData.assignmentMode || 'manual'; 
     if (mode === 'manual') {
         openEditModal(data.row, data.col);
@@ -121,6 +152,7 @@ export default function GameScreen({ route, navigation }) {
     }
   };
 
+  // ... (Keep ALL other helper functions exactly as they were: openEditModal, saveSquareInfo, handleRandomizeNumbers, handleClearNumbers, handleUpdateSettings, handleSaveScores, updateScoreInput, getWinningCoords, getTeamColor, handleLogin) ...
   const openEditModal = (row, col, existingData = null) => {
     setEditingSquare({ row, col });
     if (existingData) {
@@ -229,6 +261,7 @@ export default function GameScreen({ route, navigation }) {
     } catch (e) { Alert.alert("Error", e.message); }
   };
 
+  // ... (Keep existing Loading / Error Render) ...
   if (loading || (!gridData.id && !loadError)) {
     return (
         <SafeAreaView style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
@@ -252,6 +285,7 @@ export default function GameScreen({ route, navigation }) {
     <SafeAreaView style={styles.container}>
       <BrandHeader />
       
+      {/* ... (Keep existing Scoreboard and Tabs) ... */}
       <View style={styles.scoreboard}>
         <TouchableOpacity onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Home')} style={{paddingRight: 15}}>
           <Text style={{color: '#666', fontSize: 18}}>‹</Text>
@@ -280,7 +314,7 @@ export default function GameScreen({ route, navigation }) {
 
       <View style={styles.centeredView}>
         <View style={[styles.boardConstrainer, isWide && { maxWidth: '100%', paddingHorizontal: 20 }]}>
-          <View style={{alignItems: 'center', paddingVertical: 10, paddingLeft: 100}}> 
+          <View style={{alignItems: 'center', paddingVertical: 10, paddingLeft: 80}}> 
                <Text style={[styles.axisLabel, {color: getTeamColor(gridData.topTeam)}]}>
                    {gridData.topTeam?.toUpperCase() || "AWAY"}
                </Text>
@@ -305,25 +339,37 @@ export default function GameScreen({ route, navigation }) {
 
       {/* FABs */}
       
-      {/* 1. Share Button (Always Visible, Bottom Right) */}
+      {/* NEW: FOLLOW BUTTON (Above Share) - Shows Star/Heart */}
+      <TouchableOpacity 
+        style={[styles.fabAbove, {backgroundColor: isFollowing ? THEME.primary : THEME.card}]} 
+        onPress={handleToggleFollow}
+      >
+        <Ionicons 
+            name={isFollowing ? "star" : "star-outline"} 
+            size={24} 
+            color={isFollowing ? "#FFF" : THEME.primary} 
+        />
+      </TouchableOpacity>
+
       <TouchableOpacity style={styles.fabRight} onPress={handleShare}>
         <Text style={{fontSize: 20}}>📤</Text>
       </TouchableOpacity>
 
-      {/* 2. Admin Settings (Above Share - Only if Admin) */}
-      {/* CHECK: Current User ID matches Game Admin ID */}
+      {/* Admin Settings (Top of Stack) */}
       {user?.uid === gridData.adminId && (
-        <TouchableOpacity style={styles.fabAbove} onPress={() => setShowAdminModal(true)}>
+        <TouchableOpacity 
+            style={[styles.fabAbove, {bottom: 160}]} // Push higher since Follow is now at 95
+            onPress={() => setShowAdminModal(true)}
+        >
             <Text style={{fontSize: 20}}>⚙️</Text>
         </TouchableOpacity>
       )}
 
-      {/* 3. Player Manager (Bottom Left) */}
       <TouchableOpacity style={styles.fabLeft} onPress={() => navigation.navigate('PlayerManager', { gameId: gameId })}>
         <Text style={{fontSize: 20}}>👥</Text>
       </TouchableOpacity>
 
-      {/* MODALS */}
+      {/* ... (Keep existing MODALS: ShowDetails, ShowEdit, ShowAdmin) ... */}
       <Modal visible={showDetailsModal} transparent={true} animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDetailsModal(false)}>
             <View style={styles.detailCard}>
@@ -367,108 +413,72 @@ export default function GameScreen({ route, navigation }) {
         <View style={styles.modalOverlay}>
           <View style={[styles.detailCard, isWide && { width: '60%', maxWidth: 800 }]}>
             <Text style={styles.detailTitle}>Admin Controls</Text>
-            
-            <ScrollView style={{width: '100%'}} showsVerticalScrollIndicator={false}>
-                
-                {/* --- 1. GAME SETTINGS --- */}
-                <Text style={styles.sectionHeader}>Game Settings</Text>
-                
-                <View style={isWide ? {flexDirection: 'row'} : {}}>
-                <View style={isWide ? {flex: 1, marginRight: 10} : {}}>
-                    <Text style={styles.inputLabel}>Pool Name</Text>
-                    <TextInput style={styles.modalInput} value={settingsName} onChangeText={setSettingsName} placeholder="Pool Name" placeholderTextColor="#666" />
-                </View>
-                <View style={isWide ? {flex: 1} : {}}>
-                    <Text style={styles.inputLabel}>Host / Organization</Text>
-                    <TextInput style={styles.modalInput} value={settingsHost} onChangeText={setSettingsHost} placeholder="e.g. LBC 12U" placeholderTextColor="#666" />
-                </View>
-                </View>
-
-                <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
-                <View style={{flex: 1, marginRight: 5}}>
-                    <Text style={styles.inputLabel}>Away Team</Text>
-                    <TextInput style={styles.modalInput} value={settingsTop} onChangeText={setSettingsTop} placeholder="Away" placeholderTextColor="#666" />
-                </View>
-                <View style={{flex: 1, marginLeft: 5}}>
-                    <Text style={styles.inputLabel}>Home Team</Text>
-                    <TextInput style={styles.modalInput} value={settingsLeft} onChangeText={setSettingsLeft} placeholder="Home" placeholderTextColor="#666" />
-                </View>
-                </View>
-
-                <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
-                <View style={{flex: 1, marginRight: 5}}>
-                    <Text style={styles.inputLabel}>Price ($)</Text>
-                    <TextInput style={styles.modalInput} value={settingsPrice} onChangeText={setSettingsPrice} placeholder="0" keyboardType="numeric" placeholderTextColor="#666" />
-                </View>
-                <View style={{flex: 1, marginLeft: 5}}>
-                    <Text style={styles.inputLabel}>Host Cut</Text>
-                    <TextInput style={styles.modalInput} value={settingsCut} onChangeText={setSettingsCut} placeholder="e.g. 50%" placeholderTextColor="#666" />
-                </View>
-                </View>
-
-                <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 15}}>
-                <Text style={{color: '#fff', marginRight: 10}}>Visibility:</Text>
-                <TouchableOpacity 
-                    onPress={() => setSettingsPublic(!settingsPublic)}
-                    style={{
-                        backgroundColor: settingsPublic ? THEME.primary : '#333',
-                        paddingVertical: 5, paddingHorizontal: 10, borderRadius: 5
-                    }}
-                >
-                    <Text style={{color: '#fff', fontWeight: 'bold'}}>{settingsPublic ? "PUBLIC" : "PRIVATE"}</Text>
-                </TouchableOpacity>
-                </View>
-
-                <Button title="Save Settings" color={THEME.primary} onPress={handleUpdateSettings} />
-
-                <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
-
-                {/* 2. GAME SCORES */}
-                <Text style={styles.sectionHeader}>Game Scores</Text>
-                {['q1','q2','q3','final'].map(q => (
-                <View key={q} style={styles.scoreRow}>
-                    <Text style={styles.scoreLabel}>{q.toUpperCase()}</Text>
-                    <TextInput 
-                    value={(scores[q]?.top || '').toString()} 
-                    onChangeText={(v) => updateScoreInput(q, 'top', v)} 
-                    style={styles.smallScoreInput} keyboardType="numeric" placeholder="Away"
-                    />
-                    <TextInput 
-                    value={(scores[q]?.left || '').toString()} 
-                    onChangeText={(v) => updateScoreInput(q, 'left', v)} 
-                    style={styles.smallScoreInput} keyboardType="numeric" placeholder="Home"
-                    />
-                </View>
-                ))}
-                <Button title="Update Scores" color={THEME.accent} onPress={handleSaveScores} />
-                
-                <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
-                
-                {/* 3. GAME SETUP */}
-                <Text style={styles.sectionHeader}>Grid Setup</Text>
-                <TouchableOpacity style={styles.actionBtn} onPress={handleRandomizeNumbers}>
-                <Text style={styles.actionBtnText}>🎲 Randomize Numbers</Text>
-                </TouchableOpacity>
-                
-                <TouchableOpacity 
-                style={[styles.actionBtn, { marginTop: 10, borderColor: THEME.red }]} 
-                onPress={() => {
-                    if (Platform.OS === 'web') {
-                        if (window.confirm("Reset axis numbers to '?'")) handleClearNumbers();
-                    } else {
-                        Alert.alert("Reset Numbers", "Set axis numbers back to '?'", [
-                            { text: "Cancel", style: "cancel" },
-                            { text: "Reset", style: "destructive", onPress: handleClearNumbers }
-                        ]);
-                    }
-                }}
-                >
-                <Text style={[styles.actionBtnText, { color: THEME.red }]}>🚫 Clear Numbers</Text>
-                </TouchableOpacity>
-                
-                <View style={{height: 20}}/>
-                <Button title="Close Menu" color="#666" onPress={() => setShowAdminModal(false)} />
-            </ScrollView>
+            {!user ? (
+               <View style={{width: '100%'}}>
+                 <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.modalInput} placeholderTextColor="#666" autoCapitalize="none"/>
+                 <TextInput placeholder="Password" value={password} onChangeText={setPassword} style={styles.modalInput} secureTextEntry placeholderTextColor="#666"/>
+                 <Button title="Login" color={THEME.accent} onPress={handleLogin} />
+                 <View style={{marginTop: 15}}><Button title="Close" color="#666" onPress={() => setShowAdminModal(false)} /></View>
+               </View>
+            ) : (
+              <ScrollView style={{width: '100%'}} showsVerticalScrollIndicator={false}>
+                 <Text style={styles.sectionHeader}>Game Settings</Text>
+                 <View style={isWide ? {flexDirection: 'row'} : {}}>
+                    <View style={isWide ? {flex: 1, marginRight: 10} : {}}>
+                        <Text style={styles.inputLabel}>Pool Name</Text>
+                        <TextInput style={styles.modalInput} value={settingsName} onChangeText={setSettingsName} placeholder="Pool Name" placeholderTextColor="#666" />
+                    </View>
+                    <View style={isWide ? {flex: 1} : {}}>
+                        <Text style={styles.inputLabel}>Host / Organization</Text>
+                        <TextInput style={styles.modalInput} value={settingsHost} onChangeText={setSettingsHost} placeholder="e.g. LBC 12U" placeholderTextColor="#666" />
+                    </View>
+                 </View>
+                 <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                    <View style={{flex: 1, marginRight: 5}}>
+                        <Text style={styles.inputLabel}>Away Team</Text>
+                        <TextInput style={styles.modalInput} value={settingsTop} onChangeText={setSettingsTop} placeholder="Away" placeholderTextColor="#666" />
+                    </View>
+                    <View style={{flex: 1, marginLeft: 5}}>
+                        <Text style={styles.inputLabel}>Home Team</Text>
+                        <TextInput style={styles.modalInput} value={settingsLeft} onChangeText={setSettingsLeft} placeholder="Home" placeholderTextColor="#666" />
+                    </View>
+                 </View>
+                 <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                    <View style={{flex: 1, marginRight: 5}}>
+                        <Text style={styles.inputLabel}>Price ($)</Text>
+                        <TextInput style={styles.modalInput} value={settingsPrice} onChangeText={setSettingsPrice} placeholder="0" keyboardType="numeric" placeholderTextColor="#666" />
+                    </View>
+                    <View style={{flex: 1, marginLeft: 5}}>
+                        <Text style={styles.inputLabel}>Host Cut</Text>
+                        <TextInput style={styles.modalInput} value={settingsCut} onChangeText={setSettingsCut} placeholder="e.g. 50%" placeholderTextColor="#666" />
+                    </View>
+                 </View>
+                 <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 15}}>
+                    <Text style={{color: '#fff', marginRight: 10}}>Visibility:</Text>
+                    <TouchableOpacity onPress={() => setSettingsPublic(!settingsPublic)} style={{backgroundColor: settingsPublic ? THEME.primary : '#333', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 5}}>
+                        <Text style={{color: '#fff', fontWeight: 'bold'}}>{settingsPublic ? "PUBLIC" : "PRIVATE"}</Text>
+                    </TouchableOpacity>
+                 </View>
+                 <Button title="Save Settings" color={THEME.primary} onPress={handleUpdateSettings} />
+                 <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
+                 <Text style={styles.sectionHeader}>Game Scores</Text>
+                 {['q1','q2','q3','final'].map(q => (
+                   <View key={q} style={styles.scoreRow}>
+                      <Text style={styles.scoreLabel}>{q.toUpperCase()}</Text>
+                      <TextInput value={(scores[q]?.top || '').toString()} onChangeText={(v) => updateScoreInput(q, 'top', v)} style={styles.smallScoreInput} keyboardType="numeric" placeholder="Away"/>
+                      <TextInput value={(scores[q]?.left || '').toString()} onChangeText={(v) => updateScoreInput(q, 'left', v)} style={styles.smallScoreInput} keyboardType="numeric" placeholder="Home"/>
+                   </View>
+                 ))}
+                 <Button title="Update Scores" color={THEME.accent} onPress={handleSaveScores} />
+                 <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
+                 <Text style={styles.sectionHeader}>Grid Setup</Text>
+                 <TouchableOpacity style={styles.actionBtn} onPress={handleRandomizeNumbers}><Text style={styles.actionBtnText}>🎲 Randomize Numbers</Text></TouchableOpacity>
+                 <TouchableOpacity style={[styles.actionBtn, { marginTop: 10, borderColor: THEME.red }]} onPress={() => { if (Platform.OS === 'web') { if (window.confirm("Reset axis numbers to '?'")) handleClearNumbers(); } else { Alert.alert("Reset Numbers", "Set axis numbers back to '?'", [{ text: "Cancel", style: "cancel" }, { text: "Reset", style: "destructive", onPress: handleClearNumbers }]); } }}><Text style={[styles.actionBtnText, { color: THEME.red }]}>🚫 Clear Numbers</Text></TouchableOpacity>
+                 <View style={{height: 20}}/>
+                 <Button title="Log Out" color="#444" onPress={() => { signOut(auth); setShowAdminModal(false); }} />
+                 <View style={{height: 10}}/><Button title="Close Menu" color="#666" onPress={() => setShowAdminModal(false)} />
+              </ScrollView>
+            )}
           </View>
         </View>
       </Modal>

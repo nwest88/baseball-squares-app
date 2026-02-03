@@ -1,4 +1,4 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 import { THEME } from '../theme';
 
 export const styles = StyleSheet.create({
@@ -15,11 +15,18 @@ export const styles = StyleSheet.create({
   },
   logoWrapper: {
     marginRight: 10,
-    // Optional: Add a shadow/glow to the logo
-    shadowColor: THEME.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 10,
+    // FIX: Use Platform.select to handle Web vs Native shadows
+    ...Platform.select({
+      web: {
+        boxShadow: `0px 0px 10px ${THEME.primary}`, // CSS style shadow for Web
+      },
+      default: {
+        shadowColor: THEME.primary,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.5,
+        shadowRadius: 10,
+      },
+    }),
   },
   logoTextContainer: {
     flexDirection: 'column',
