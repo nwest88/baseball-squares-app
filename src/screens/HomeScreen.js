@@ -38,9 +38,18 @@ export default function HomeScreen({ navigation }) {
       const currentUserId = auth.currentUser?.uid;
 
       if (currentUserId) {
+          // 1. POOLS I MANAGE (Show all, even private ones)
           const mine = allGames.filter(g => g.adminId === currentUserId);
-          const joined = []; 
-          const others = allGames.filter(g => g.adminId !== currentUserId); 
+          // 2. POOLS I'M IN (Placeholder for now)
+          const joined = [];  
+          // 3. PUBLIC POOLS (CRITICAL FIX)
+          // Exclude mine AND exclude private ones
+          const others = allGames.filter(g => {
+            const isMine = g.adminId === currentUserId;
+            // Check for 'false' explicitly because legacy data might be undefined (default public)
+            const isPrivate = g.isPublic === false;
+            return !isMine && !isPrivate;
+          });
           
           setMyPools(mine);
           setJoinedPools(joined);
@@ -48,7 +57,8 @@ export default function HomeScreen({ navigation }) {
       } else {
           setMyPools([]);
           setJoinedPools([]);
-          setPublicPools(allGames);
+          // Guest View: Only show Public games
+          setPublicPools(allGames.filter(g => g.isPublic !== false));
       }
       
       setLoading(false);
