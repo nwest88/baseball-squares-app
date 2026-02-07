@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react'; 
-import { View, Text, TouchableOpacity, SafeAreaView, ActivityIndicator, ScrollView, useWindowDimensions, Platform } from 'react-native';
+import { View, Text, TouchableOpacity, SafeAreaView, ActivityIndicator, ScrollView, useWindowDimensions, Platform, TextInput } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore'; 
-import { getAuth, onAuthStateChanged } from 'firebase/auth'; 
 import { useFocusEffect } from '@react-navigation/native'; 
+import { Ionicons } from '@expo/vector-icons'; // Added for icons
+
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme/index.js';
 import BrandHeader from '../components/BrandHeader';
@@ -11,68 +12,73 @@ import GamePoolCard from '../components/GamePoolCard';
 import { styles } from '../styles/HomeScreen.styles'; 
 import { getFollowedGames } from '../utils/storage';
 
+// 1. IMPORT THE AUTH CONTEXT
+import { useAuth } from '../context/AuthContext';
+
 export default function HomeScreen({ navigation }) {
-  const [allData, setAllData] = useState([]); // Raw Firebase Data
+  // 2. USE THE HOOK
+  const { user, showLogin, loading: authLoading } = useAuth();
+  
+  const [allData, setAllData] = useState([]); 
   const [myPools, setMyPools] = useState([]);
   const [joinedPools, setJoinedPools] = useState([]); 
   const [publicPools, setPublicPools] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState(null);
+  const [dataLoading, setDataLoading] = useState(true);
   
+  // Phase 3: Search State
+  const [searchText, setSearchText] = useState('');
+
   const { width } = useWindowDimensions();
   const isWide = width > 768; 
 
-  // --- A. LISTEN TO FIREBASE (Once) ---
+  // --- A. LISTEN TO FIREBASE DATA ---
+  // (Auth listener removed because AuthContext handles it now)
   useEffect(() => {
-    const auth = getAuth();
-    const unsubAuth = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-    });
-
     const q = query(collection(db, "squares_pool"), orderBy("createdAt", "desc")); 
     const unsubData = onSnapshot(q, (snapshot) => {
       const games = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setAllData(games);
-      setLoading(false);
+      setDataLoading(false);
     });
 
-    return () => { unsubAuth(); unsubData(); };
+    return () => { unsubData(); };
   }, []);
 
-  // --- B. FILTER LOGIC (Runs on Load AND Focus) ---
-  // We wrap this in useFocusEffect so it re-runs when you come back from a game
-  // (because you might have just followed a new pool)
+  // --- B. FILTER LOGIC ---
   useFocusEffect(
     useCallback(() => {
-        if (loading || allData.length === 0) return;
+        if (dataLoading || allData.length === 0) return;
 
         const filterGames = async () => {
-            const currentUserId = getAuth().currentUser?.uid;
+            // Use 'user' from Context instead of getAuth()
+            const currentUserId = user?.uid;
             
-            // 1. Get Followed IDs from Local Storage
             const followedIds = await getFollowedGames();
 
-            // 2. Filter Buckets
             let mine = [];
             let joined = [];
             let others = [];
 
             if (currentUserId) {
                 mine = allData.filter(g => g.adminId === currentUserId);
-                
-                // Joined = IDs in storage AND NOT my own pools
                 joined = allData.filter(g => followedIds.includes(g.id) && g.adminId !== currentUserId);
-                
-                // Public = Not Mine, Not Joined, And Public
                 others = allData.filter(g => 
                     g.adminId !== currentUserId && 
                     !followedIds.includes(g.id) && 
                     g.isPublic !== false
                 );
             } else {
-                // Guest Logic
                 joined = allData.filter(g => followedIds.includes(g.id));
                 others = allData.filter(g => !followedIds.includes(g.id) && g.isPublic !== false);
+            }
+
+            // Simple Search Filter
+            if (searchText) {
+              const lowerSearch = searchText.toLowerCase();
+              const searchFilter = g => g.id.toLowerCase().includes(lowerSearch) || g.name?.toLowerCase().includes(lowerSearch);
+              mine = mine.filter(searchFilter);
+              joined = joined.filter(searchFilter);
+              others = others.filter(searchFilter);
             }
 
             setMyPools(mine);
@@ -81,8 +87,15 @@ export default function HomeScreen({ navigation }) {
         };
 
         filterGames();
-    }, [allData, loading, user]) // Re-run if data or user changes
+    }, [allData, dataLoading, user, searchText]) // Re-run if user or search changes
   );
+
+  const handleSearch = () => {
+    if (searchText.length > 0) {
+       // Could navigate to specific game if ID matches exactly, 
+       // but for now the filter above handles it visually.
+    }
+  };
 
   const mapGameToCardData = (game) => {
       const cols = game.gridCols || 10;
@@ -148,7 +161,8 @@ export default function HomeScreen({ navigation }) {
             {data.length === 0 && showIfEmpty ? (
                 <View style={[styles.emptyContainer, { width: '100%' }]}>
                     <Text style={styles.emptyText}>You don't manage any pools yet.</Text>
-                    <TouchableOpacity onPress={() => navigation.navigate('Create')}>
+                    {/* Trigger Login if guest, otherwise Create */}
+                    <TouchableOpacity onPress={() => user ? navigation.navigate('Create') : showLogin()}>
                         <Text style={styles.createLink}>Create one now →</Text>
                     </TouchableOpacity>
                 </View>
@@ -176,7 +190,45 @@ export default function HomeScreen({ navigation }) {
       <View style={Platform.OS === 'web' ? { maxWidth: 800, width: '100%', alignSelf: 'center', flex: 1 } : { flex: 1 }}>
         <BrandHeader title="Dashboard" />
         
-        {loading ? (
+        {/* --- PHASE 3: STATUS BAR & SEARCH --- */}
+        <View style={{ paddingHorizontal: 20, marginBottom: 10 }}>
+          {/* Auth Row */}
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
+            <Text style={{ color: THEME.subtext, fontWeight: '600' }}>
+              {user ? `Hello, ${user.email?.split('@')[0] || 'User'}` : 'Guest Mode'}
+            </Text>
+            {user ? (
+               <TouchableOpacity 
+                 onPress={() => navigation.navigate('Profile')}
+                 style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.background, padding: 6, borderRadius: 20, borderWidth: 1, borderColor: THEME.border }}
+               >
+                 <Ionicons name="person-circle" size={24} color={THEME.primary} />
+                 <Text style={{ marginLeft: 6, color: THEME.primary, fontWeight: 'bold', fontSize: 12, marginRight: 4 }}>PROFILE</Text>
+               </TouchableOpacity>
+            ) : (
+               <TouchableOpacity 
+                 onPress={showLogin}
+                 style={{ backgroundColor: THEME.primary, paddingVertical: 6, paddingHorizontal: 16, borderRadius: 20 }}
+               >
+                 <Text style={{ color: '#fff', fontWeight: 'bold', fontSize: 12 }}>LOG IN</Text>
+               </TouchableOpacity>
+            )}
+          </View>
+
+          {/* Search Bar */}
+          <View style={{ flexDirection: 'row', backgroundColor: THEME.card, borderRadius: 8, padding: 10, borderWidth: 1, borderColor: THEME.border, alignItems: 'center' }}>
+            <Ionicons name="search" size={20} color={THEME.subtext} style={{ marginRight: 10 }} />
+            <TextInput 
+              placeholder="Search by Pool ID or Name..."
+              placeholderTextColor={THEME.subtext}
+              style={{ flex: 1, fontSize: 16, color: THEME.text }}
+              value={searchText}
+              onChangeText={setSearchText}
+            />
+          </View>
+        </View>
+
+        {dataLoading || authLoading ? (
           <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color={THEME.primary} />
           </View>
@@ -185,22 +237,22 @@ export default function HomeScreen({ navigation }) {
             contentContainerStyle={{ padding: 20, paddingBottom: 100 }}
             showsVerticalScrollIndicator={false}
           >
-             <PoolSection title="Pools I Manage" data={myPools} showIfEmpty={true} />
-             {/* 3. THIS SECTION NOW WORKS */}
-             <PoolSection title="Pools I'm In" data={joinedPools} />
-             <PoolSection title="Public Pools" data={publicPools} />
+              <PoolSection title="Pools I Manage" data={myPools} showIfEmpty={!!user} />
+              <PoolSection title="Pools I'm In" data={joinedPools} />
+              <PoolSection title="Public Pools" data={publicPools} />
           </ScrollView>
         )}
 
         <TouchableOpacity 
           style={styles.fab} 
-          onPress={() => navigation.navigate('Create')}
+          // Trigger Login if guest, otherwise Create
+          onPress={() => user ? navigation.navigate('Create') : showLogin()}
           activeOpacity={0.8}
         >
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
       </View>
-      <StatusBar style="light" />
+      <StatusBar style="dark" />
     </SafeAreaView>
   );
 }

@@ -1,57 +1,69 @@
-import React, { useEffect } from 'react';
+import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { StatusBar } from 'expo-status-bar';
-import * as Linking from 'expo-linking';
-import { getAuth, signInAnonymously } from 'firebase/auth'; // <--- NEW IMPORTS
-import { app } from './firebaseConfig'; // Ensure this exports 'app' or just import './firebaseConfig' if it initializes globally
+
+// Context & Components
+import { AuthProvider, useAuth } from './src/context/AuthContext';
+import LoginModal from './src/components/LoginModal';
 
 // Screens
 import HomeScreen from './src/screens/HomeScreen';
-import GameScreen from './src/screens/GameScreen';
 import CreateScreen from './src/screens/CreateScreen';
+import GameScreen from './src/screens/GameScreen';
 import PlayerManager from './src/screens/PlayerManager';
+// Note: We are no longer using LoginScreen.js as a route!
+import ProfileScreen from './src/screens/ProfileScreen';
 
 const Stack = createNativeStackNavigator();
-const auth = getAuth(); // Initialize Auth
 
-const linking = {
-  prefixes: [Linking.createURL('/')],
-  config: {
-    screens: {
-      Home: '',
-      Create: 'create',
-      Game: 'game/:gameId',
-      PlayerManager: 'manage/:gameId',
-    },
-  },
+// We create a separate component for the content so it can use the useAuth hook
+// (You can't use a hook inside the same component that creates the Provider)
+const AppContent = () => {
+  const { user, modalVisible, hideLogin } = useAuth();
+
+  return (
+    <>
+      <NavigationContainer>
+        <StatusBar style="auto" />
+        <Stack.Navigator 
+          initialRouteName="Home"
+          screenOptions={{ headerShown: false }}
+        >
+          {/* We pass 'user' prop to screens to maintain compatibility 
+            with your existing code, even though they *could* use useAuth() now.
+          */}
+          <Stack.Screen name="Home">
+            {props => <HomeScreen {...props} user={user} />}
+          </Stack.Screen>
+          
+          <Stack.Screen name="Create">
+            {props => <CreateScreen {...props} user={user} />}
+          </Stack.Screen>
+          
+          <Stack.Screen name="Game">
+            {props => <GameScreen {...props} user={user} />}
+          </Stack.Screen>
+          
+          <Stack.Screen name="PlayerManager" component={PlayerManager} />
+          
+          <Stack.Screen name="Profile">
+            {props => <ProfileScreen {...props} user={user} />}
+          </Stack.Screen>
+
+        </Stack.Navigator>
+      </NavigationContainer>
+
+      {/* GLOBAL LOGIN MODAL - Lives outside navigation */}
+      <LoginModal visible={modalVisible} onClose={hideLogin} />
+    </>
+  );
 };
 
 export default function App() {
-  
-  // --- SILENT LOGIN LOGIC ---
-  useEffect(() => {
-    const signIn = async () => {
-      try {
-        const userCredential = await signInAnonymously(auth);
-        console.log("Silent Login Success! User ID:", userCredential.user.uid);
-      } catch (error) {
-        console.error("Silent Login Failed:", error);
-      }
-    };
-    signIn();
-  }, []);
-  // --------------------------
-
   return (
-    <NavigationContainer linking={linking}>
-      <StatusBar style="light" />
-      <Stack.Navigator initialRouteName="Home">
-        <Stack.Screen name="Home" component={HomeScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="Game" component={GameScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="Create" component={CreateScreen} options={{ headerShown: false }} />
-        <Stack.Screen name="PlayerManager" component={PlayerManager} options={{ headerShown: false }} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <AuthProvider>
+      <AppContent />
+    </AuthProvider>
   );
 }
