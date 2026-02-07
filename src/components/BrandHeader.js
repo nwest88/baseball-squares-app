@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text } from 'react-native';
-import { THEME } from '../theme';
+import { THEME } from '../theme/index.js';
 import Logo from './logo';
 import { styles } from '../styles/BrandHeader.styles'; // <--- Import the shared fixed styles
 

@@ -1,12 +1,12 @@
 import { StyleSheet, Platform } from 'react-native';
-import { THEME } from '../theme';
+import { THEME } from '../theme/index';
 
 export const styles = StyleSheet.create({
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 20,
-    backgroundColor: THEME.bg,
+    backgroundColor: THEME.background,
     borderBottomWidth: 1,
     borderColor: THEME.border,
     // --- FIX: Fixed Height creates consistency across Web & Mobile ---

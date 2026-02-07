@@ -2,7 +2,7 @@
 
 export const THEME = {
   // --- 1. BRAND PALETTE ---
-  primary: '#ff2942',     // "Electric Blue" (Brand Identity)
+  primary: '#5029ff',     // "Electric Blue" (Brand Identity)
   accent: '#00C853',      // "Money Green" (Action buttons, Success)
   gold: '#FFD700',        // Axis numbers / Quarter Tabs
 
@@ -18,7 +18,7 @@ export const THEME = {
   error: '#FF4444',   // Error messages
 
   // --- 4. GAME COLORS ---
-  red: '#E63946',     // Team A (e.g. Chiefs)
+  red: '#3c39e6',     // Team A (e.g. Chiefs)
   green: '#2A9D8F',   // Team B (e.g. Eagles)
   border: '#333333',  // Grid lines and dividers
   

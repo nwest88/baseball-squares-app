@@ -1,11 +1,11 @@
 import { StyleSheet, Platform, StatusBar } from 'react-native';
-import { THEME } from '../theme';
+import { THEME } from '../theme/index';
 
 export const styles = StyleSheet.create({
   // ... (Keep existing container, scoreboard, tab, board styles same as before) ...
   container: { 
     flex: 1, 
-    backgroundColor: THEME.bg,
+    backgroundColor: THEME.background,
     // --- FIX: Add padding ONLY on Android to clear the notification bar ---
     paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0
   },

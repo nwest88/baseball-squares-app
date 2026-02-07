@@ -3,7 +3,7 @@ import { View, Text, TextInput, Button, SafeAreaView, TouchableOpacity, Activity
 import { doc, setDoc } from 'firebase/firestore'; 
 import { getAuth } from 'firebase/auth'; 
 import { db } from '../../firebaseConfig'; 
-import { THEME } from '../theme';
+import { THEME } from '../theme/index.js';
 import BrandHeader from '../components/BrandHeader';
 import { styles } from '../styles/CreateScreen.styles';
 

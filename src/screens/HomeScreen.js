@@ -5,7 +5,7 @@ import { collection, onSnapshot, query, orderBy } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth'; 
 import { useFocusEffect } from '@react-navigation/native'; 
 import { db } from '../../firebaseConfig'; 
-import { THEME } from '../theme';
+import { THEME } from '../theme/index.js';
 import BrandHeader from '../components/BrandHeader';
 import GamePoolCard from '../components/GamePoolCard'; 
 import { styles } from '../styles/HomeScreen.styles'; 

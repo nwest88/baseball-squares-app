@@ -3,7 +3,7 @@ import { View, Text, SafeAreaView, TouchableOpacity, FlatList, TextInput, Alert,
 import { doc, onSnapshot, updateDoc, deleteField } from 'firebase/firestore';
 import { getAuth, onAuthStateChanged } from 'firebase/auth'; 
 import { db } from '../../firebaseConfig'; 
-import { THEME } from '../theme';
+import { THEME } from '../theme/index.js';
 import BrandHeader from '../components/BrandHeader';
 import { styles } from '../styles/PlayerManager.styles';
 import { deletePlayerFromGrid, updatePlayerAllocation } from '../utils/gameFunctions';

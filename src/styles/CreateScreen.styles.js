@@ -1,8 +1,8 @@
 import { StyleSheet, Platform, StatusBar } from 'react-native';
-import { THEME } from '../theme';
+import { THEME } from '../theme/index';
 
 export const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: THEME.bg, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0},
+  container: { flex: 1, backgroundColor: THEME.background, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0},
   content: { padding: 20 },
   header: { fontSize: 32, fontWeight: 'bold', color: THEME.text, marginBottom: 20 },
   formGroup: { marginBottom: 20 },

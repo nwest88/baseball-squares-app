@@ -1,6 +1,6 @@
 import React from 'react';
 import { Image } from 'react-native';
-import { THEME } from '../theme';
+import { THEME } from '../theme/index.js';
 
 const logoSource = require('../../assets/logo.png'); 
 

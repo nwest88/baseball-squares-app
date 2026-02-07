@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { Modal, View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
 // FIX 1: Import THEME (correct name) instead of theme
-import { THEME } from '../theme';
+import { THEME } from '../theme/index.js';
 
 export default function ImportReviewModal({ visible, onClose, onConfirm, importedPlayers, isLoading }) {
   // Calculate stats for the user

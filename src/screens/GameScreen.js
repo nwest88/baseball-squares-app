@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db, auth } from '../../firebaseConfig'; 
 import GridBoard from '../components/GridBoard'; 
 import { styles } from '../styles/GameScreen.styles'; 
-import { THEME } from '../theme';
+import { THEME } from '../theme/index.js';
 import BrandHeader from '../components/BrandHeader';
 // 1. IMPORT STORAGE UTILS
 import { toggleFollowGame, isGameFollowed } from '../utils/storage';
