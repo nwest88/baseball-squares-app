@@ -1,6 +1,7 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import * as Linking from 'expo-linking';
 import { AuthProvider } from './src/context/AuthContext'; // Import AuthProvider
 
 // Screens
@@ -13,12 +14,17 @@ const Stack = createNativeStackNavigator();
 
 // Define Linking Configuration
 const linking = {
-  prefixes: ['https://quiksquares.app', 'quiksquares://'],
+  prefixes: [Linking.createURL('/'), 'https://quiksquares.app', 'quiksquares://'],
   config: {
     screens: {
       Home: '',
       Create: 'create',
-      Game: 'game/:gameId', // Map /game/ID to GameScreen params
+      Game: {
+        path: 'game/:gameId',
+        parse: {
+          gameId: (id) => `${id}`,
+        },
+      },
       Profile: 'profile',
     },
   },
@@ -30,8 +36,7 @@ function AppContent() {
       <Stack.Screen name="Home" component={HomeScreen} />
       <Stack.Screen name="Create" component={CreateScreen} />
       <Stack.Screen name="Game" component={GameScreen} />
-      {/* Add Profile Screen if it exists */}
-      {/* <Stack.Screen name="Profile" component={ProfileScreen} /> */} 
+      <Stack.Screen name="Profile" component={ProfileScreen} />
     </Stack.Navigator>
   );
 }
