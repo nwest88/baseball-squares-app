@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator, Share, Platform, useWindowDimensions, FlatList, Switch, KeyboardAvoidingView, StyleSheet, Image, TouchableWithoutFeedback } from 'react-native';
+import { View, Text, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator, Share, Platform, useWindowDimensions, Switch, FlatList, KeyboardAvoidingView, StyleSheet, Image, TouchableWithoutFeedback } from 'react-native';
 import { doc, onSnapshot, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
@@ -7,7 +7,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { db, auth } from '../../firebaseConfig'; 
 import GridBoard from '../components/GridBoard'; 
 import GamePoolCard from '../components/GamePoolCard';
-// BrandHeader removed
 import ImportReviewModal from '../components/ImportReviewModal';
 
 // Styles & Theme
@@ -51,7 +50,7 @@ export default function GameScreen({ route, navigation }) {
   const [scores, setScores] = useState(DEFAULT_SCORES);
 
   // --- MODAL STATES ---
-  const [showAdminModal, setShowAdminModal] = useState(false);
+  const [showAdminModal, setShowAdminModal] = useState(false); // Kept for legacy compatibility if needed, but main admin is in tab
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   
@@ -72,6 +71,12 @@ export default function GameScreen({ route, navigation }) {
   const [settingsPrice, setSettingsPrice] = useState(""); 
   const [settingsCut, setSettingsCut] = useState("");     
   const [settingsPublic, setSettingsPublic] = useState(true);
+
+  // --- NEW: CUSTOM PAYOUTS STATE ---
+  const [payoutQ1, setPayoutQ1] = useState("");
+  const [payoutQ2, setPayoutQ2] = useState("");
+  const [payoutQ3, setPayoutQ3] = useState("");
+  const [payoutFinal, setPayoutFinal] = useState("");
   
   // --- PLAYER MANAGER STATE ---
   const [pmName, setPmName] = useState("");
@@ -113,7 +118,8 @@ export default function GameScreen({ route, navigation }) {
             }));
         }
 
-        if (!showAdminModal) {
+        // Sync Admin Settings if not actively editing
+        if (activeTab !== 'info' || !user) {
             setSettingsName(data.name || "");
             setSettingsHost(data.hostName || ""); 
             setSettingsTop(data.topTeam || "");
@@ -121,6 +127,14 @@ export default function GameScreen({ route, navigation }) {
             setSettingsPrice(data.pricePerSquare ? data.pricePerSquare.toString() : ""); 
             setSettingsCut(data.hostCut || ""); 
             setSettingsPublic(data.isPublic !== false); 
+            
+            // Sync Payouts
+            if (data.customPayouts) {
+                setPayoutQ1(data.customPayouts.q1 || "");
+                setPayoutQ2(data.customPayouts.q2 || "");
+                setPayoutQ3(data.customPayouts.q3 || "");
+                setPayoutFinal(data.customPayouts.final || "");
+            }
         }
 
         setLoading(false); 
@@ -135,7 +149,7 @@ export default function GameScreen({ route, navigation }) {
 
     const unsubAuth = onAuthStateChanged(auth, u => setUser(u));
     return () => { unsubDocs(); unsubAuth(); };
-  }, [gameId, showAdminModal]); 
+  }, [gameId]); 
 
   const isAdmin = user && gridData.adminId && user.uid === gridData.adminId;
 
@@ -210,6 +224,41 @@ export default function GameScreen({ route, navigation }) {
         .sort((a, b) => b.count - a.count);
   };
 
+  // Calculate Pot & Payouts for Display
+  const stats = getBoardStats();
+  const price = gridData.pricePerSquare || 0;
+  const grossPot = stats.taken * price; 
+  // Simple Host Cut logic for display (string parsing)
+  let netPot = grossPot;
+  if (gridData.hostCut) {
+      const cutString = gridData.hostCut.toString().trim();
+      let cutAmount = 0;
+      if (cutString.includes('%')) {
+          const percentage = parseFloat(cutString.replace('%', ''));
+          if (!isNaN(percentage)) cutAmount = grossPot * (percentage / 100);
+      } else {
+          const flat = parseFloat(cutString.replace(/[^0-9.]/g, ''));
+          if (!isNaN(flat)) cutAmount = flat;
+      }
+      netPot = Math.max(0, grossPot - cutAmount);
+  }
+
+  // Determine Payouts (Custom vs Default)
+  let displayPayouts = { q1: 0, q2: 0, q3: 0, final: 0 };
+  if (gridData.customPayouts) {
+      // Use stored overrides
+      displayPayouts = {
+          q1: gridData.customPayouts.q1 || 0,
+          q2: gridData.customPayouts.q2 || 0,
+          q3: gridData.customPayouts.q3 || 0,
+          final: gridData.customPayouts.final || 0
+      };
+  } else {
+      // Default 4-way split
+      const split = netPot > 0 ? netPot / 4 : 0;
+      displayPayouts = { q1: split, q2: split, q3: split, final: split };
+  }
+
 
   // ===============================================================
   // 3. ACTION HANDLERS
@@ -224,7 +273,6 @@ export default function GameScreen({ route, navigation }) {
         }
     });
   };
-
 
   const handleToggleFollow = async () => {
       const newState = await toggleFollowGame(gameId);
@@ -263,8 +311,98 @@ export default function GameScreen({ route, navigation }) {
     else Alert.alert("Auto Mode", "Use the 'Players' tab to assign squares.");
   };
 
+  // ADMIN ACTIONS (Now called from Info Tab)
+  const handleRandomizeNumbers = async () => {
+      const doRandomize = async () => {
+          const cols = gridData.gridCols || 10;
+          const rows = gridData.gridRows || 10;
+          const generateShuffled = (size) => Array.from({ length: size }, (_, i) => i).sort(() => Math.random() - 0.5);
+          try {
+              await updateDoc(doc(db, "squares_pool", gameId), {
+                  topAxis: generateShuffled(cols),
+                  leftAxis: generateShuffled(rows)
+              });
+              Alert.alert("Success", "Numbers Randomized!");
+          } catch (e) { Alert.alert("Error", e.message); }
+      };
+
+      // CONFIRMATION LOGIC
+      if (Platform.OS === 'web') {
+          if (window.confirm("Randomize Axis Numbers?\n\nThis will change the game completely! Only do this if you are sure.")) {
+              doRandomize();
+          }
+      } else {
+          Alert.alert(
+              "Randomize Numbers?", 
+              "This will change the game completely! Only do this if you are sure.",
+              [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Randomize", style: "destructive", onPress: doRandomize }
+              ]
+          );
+      }
+  };
+
+  const handleClearNumbers = async () => {
+      const doClear = async () => {
+          const cols = gridData.gridCols || 10;
+          const rows = gridData.gridRows || 10;
+          try {
+              await updateDoc(doc(db, "squares_pool", gameId), {
+                  topAxis: Array(cols).fill("?"),
+                  leftAxis: Array(rows).fill("?")
+              });
+              Alert.alert("Success", "Numbers Cleared!");
+          } catch (e) { Alert.alert("Error", e.message); }
+      };
+
+      // CONFIRMATION LOGIC
+      if (Platform.OS === 'web') {
+          if (window.confirm("Clear Axis Numbers?\n\nThis will reset all numbers to '?'.")) {
+              doClear();
+          }
+      } else {
+          Alert.alert(
+              "Clear Numbers?", 
+              "This will reset all numbers to '?'.",
+              [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Clear", style: "destructive", onPress: doClear }
+              ]
+          );
+      }
+  };
+
+  const handleUpdateSettings = async () => {
+      try {
+          await updateDoc(doc(db, "squares_pool", gameId), {
+              name: settingsName,
+              hostName: settingsHost, 
+              topTeam: settingsTop,
+              leftTeam: settingsLeft,
+              pricePerSquare: Number(settingsPrice) || 0, 
+              hostCut: settingsCut,   
+              isPublic: settingsPublic,
+              // Save custom payouts
+              customPayouts: {
+                  q1: payoutQ1,
+                  q2: payoutQ2,
+                  q3: payoutQ3,
+                  final: payoutFinal
+              }
+          });
+          Alert.alert("Success", "Game settings updated!");
+      } catch (e) { Alert.alert("Error", e.message); }
+  };
+
+  const handleSaveScores = async () => {
+    try { await setDoc(doc(db, "squares_pool", gameId), { scores: scores }, { merge: true }); Alert.alert("Success", "Scores Updated"); } catch (e) { Alert.alert("Save Failed", e.message); }
+  };
+  
+  const updateScoreInput = (q, team, val) => { setScores(prev => ({ ...prev, [q]: { ...(prev[q] || {}), [team]: val } })); };
+
+  // PLAYER MANAGER ACTIONS (Copied from PlayerManager.js logic)
   const handleAutoAssign = async () => {
-    const stats = getBoardStats();
     if (!isAdmin || stats.isFull) return;
     if (!pmName.trim()) { Alert.alert("Error", "Name required"); return; }
     const numSquares = parseInt(pmCount);
@@ -362,17 +500,14 @@ export default function GameScreen({ route, navigation }) {
       setImportModalVisible(false);
   };
 
-
   // --- GENERIC SETTINGS HANDLERS ---
   const handleLogin = async () => { 
-      // 1. Validation check
       if (!email.trim() || !password.trim()) {
           const msg = "Please enter both email and password.";
           if (Platform.OS === 'web') window.alert(msg);
           else Alert.alert("Validation Error", msg);
           return;
       }
-
       setIsLoggingIn(true);
       try { 
           await signInWithEmailAndPassword(auth, email, password); 
@@ -385,57 +520,10 @@ export default function GameScreen({ route, navigation }) {
           if (e.code === 'auth/user-not-found') friendlyMsg = "No user found with this email.";
           if (e.code === 'auth/wrong-password') friendlyMsg = "Incorrect password.";
           if (e.code === 'auth/invalid-credential') friendlyMsg = "Invalid credentials.";
-
-          if (Platform.OS === 'web') {
-              window.alert("Login Error: " + friendlyMsg);
-          } else {
-              Alert.alert("Error", friendlyMsg); 
-          }
+          if (Platform.OS === 'web') window.alert("Login Error: " + friendlyMsg);
+          else Alert.alert("Error", friendlyMsg); 
       } finally {
           setIsLoggingIn(false);
-      }
-  };
-  
-  const handleUpdateSettings = async () => { try { await updateDoc(doc(db, "squares_pool", gameId), { name: settingsName, hostName: settingsHost, topTeam: settingsTop, leftTeam: settingsLeft, pricePerSquare: Number(settingsPrice) || 0, hostCut: settingsCut, isPublic: settingsPublic }); Alert.alert("Success", "Settings updated!"); } catch (e) { Alert.alert("Error", e.message); } };
-  const handleSaveScores = async () => { try { await setDoc(doc(db, "squares_pool", gameId), { scores: scores }, { merge: true }); Alert.alert("Success", "Scores Updated"); } catch (e) { Alert.alert("Save Failed", e.message); } };
-  const updateScoreInput = (q, team, val) => { setScores(prev => ({ ...prev, [q]: { ...(prev[q] || {}), [team]: val } })); };
-  
-  const handleClearNumbers = async () => {
-      const doClear = async () => {
-          try { 
-              await updateDoc(doc(db, "squares_pool", gameId), { topAxis: Array(10).fill("?"), leftAxis: Array(10).fill("?") }); 
-              if (Platform.OS === 'web') window.alert("Success: Numbers Cleared!");
-              else Alert.alert("Success", "Numbers Cleared!"); 
-          } catch (e) { 
-              if (Platform.OS === 'web') window.alert("Error: " + e.message);
-              else Alert.alert("Error", e.message); 
-          }
-      };
-
-      if (Platform.OS === 'web') {
-          if (window.confirm("Clear Axis Numbers?\n\nThis will reset all row and column headers to '?'")) doClear();
-      } else {
-          Alert.alert("Clear Axis Numbers?", "This will reset all row and column headers to '?'", [{ text: "Cancel", style: "cancel" }, { text: "Clear", style: "destructive", onPress: doClear }]);
-      }
-  };
-  
-  const handleRandomizeNumbers = async () => { 
-      const doRandomize = async () => {
-          const gen = (s) => Array.from({length:s},(_,i)=>i).sort(()=>Math.random()-0.5); 
-          try { 
-              await updateDoc(doc(db, "squares_pool", gameId), { topAxis: gen(10), leftAxis: gen(10) }); 
-              if (Platform.OS === 'web') window.alert("Success: Numbers Randomized!");
-              else Alert.alert("Success", "Numbers Randomized!"); 
-          } catch (e) { 
-              if (Platform.OS === 'web') window.alert("Error: " + e.message);
-              else Alert.alert("Error", e.message); 
-          } 
-      };
-
-      if (Platform.OS === 'web') {
-          if (window.confirm("Randomize Axis Numbers?\n\nAre you sure?")) doRandomize();
-      } else {
-          Alert.alert("Randomize Axis Numbers?", "Are you sure?", [{ text: "Cancel", style: "cancel" }, { text: "Randomize", style: "destructive", onPress: doRandomize }]);
       }
   };
   
@@ -443,13 +531,21 @@ export default function GameScreen({ route, navigation }) {
     setEditingSquare({ row, col });
     if (existingData) { setEditName(existingData.name || ""); setEditEmail(existingData.email || ""); setEditNote(existingData.note || ""); } 
     else { setEditName(""); setEditEmail(""); setEditNote(""); }
-    setShowDetailsModal(false); setShowEditModal(true);     
+    setShowDetailsModal(false); setShowEditModal(true);     
   };
+  
+  // RESTORED: This is the function that was missing!
   const saveSquareInfo = async () => {
     if (!editingSquare) return;
     const key = `${editingSquare.row}-${editingSquare.col}`;
-    const valueToSave = editName.trim() === "" ? null : { name: editName, email: editEmail, note: editNote };
-    try { await setDoc(doc(db, "squares_pool", gameId), { [key]: valueToSave }, { merge: true }); setShowEditModal(false); } catch (e) { Alert.alert("Error", "Could not save."); }
+    const newOwnerData = { name: editName, email: editEmail, note: editNote };
+    const valueToSave = editName.trim() === "" ? null : newOwnerData;
+    try { 
+        await setDoc(doc(db, "squares_pool", gameId), { [key]: valueToSave }, { merge: true }); 
+        setShowEditModal(false); 
+    } catch (e) { 
+        Alert.alert("Error", "Could not save."); 
+    }
   };
 
 
@@ -460,17 +556,13 @@ export default function GameScreen({ route, navigation }) {
   if (loading || (!gridData.id && !loadError)) return <SafeAreaView style={[styles.container, {justifyContent:'center',alignItems:'center'}]}><ActivityIndicator size="large" color={THEME.primary} /></SafeAreaView>;
   if (loadError) return <SafeAreaView style={styles.container}><Text style={{color:'red'}}>{loadError}</Text><Button title="Home" onPress={() => navigation.navigate('Home')} /></SafeAreaView>;
 
-  const stats = getBoardStats();
   const playerStats = getPlayerStats();
   
-  const price = gridData.pricePerSquare || 0;
-  const pot = stats.taken * price;
-  const payouts = { q1: pot * 0.125, q2: pot * 0.25, q3: pot * 0.125, final: pot * 0.5 }; 
-
+  // RENDER INFO TAB (Admin Controls & Read Only)
   const renderInfoTab = () => {
     if (isAdmin) {
         return (
-            <ScrollView style={{flex: 1, padding: 15}}>
+            <ScrollView style={{flex: 1, padding: 15}} showsVerticalScrollIndicator={false}>
                  <Text style={styles.sectionHeader}>📋 Game Details (Admin)</Text>
                  <View style={{marginBottom: 10}}><Text style={styles.inputLabel}>Pool Name</Text><TextInput style={styles.modalInput} value={settingsName} onChangeText={setSettingsName} placeholder="Name" placeholderTextColor="#666"/></View>
                  <View style={{flexDirection:'row', justifyContent:'space-between', marginBottom: 10}}>
@@ -479,8 +571,35 @@ export default function GameScreen({ route, navigation }) {
                  </View>
                  <View style={{flexDirection:'row', justifyContent:'space-between', marginBottom: 10}}>
                      <View style={{flex:1, marginRight:5}}><Text style={styles.inputLabel}>Price ($)</Text><TextInput style={styles.modalInput} value={settingsPrice} onChangeText={setSettingsPrice} placeholder="0" keyboardType="numeric" placeholderTextColor="#666"/></View>
-                     <View style={{flex:1, marginLeft:5}}><Text style={styles.inputLabel}>Host Cut %</Text><TextInput style={styles.modalInput} value={settingsCut} onChangeText={setSettingsCut} placeholder="0" placeholderTextColor="#666"/></View>
+                     <View style={{flex:1, marginLeft:5}}><Text style={styles.inputLabel}>Host Cut</Text><TextInput style={styles.modalInput} value={settingsCut} onChangeText={setSettingsCut} placeholder="0" placeholderTextColor="#666"/></View>
                  </View>
+                 
+                 {/* --- NEW: CUSTOM PAYOUTS --- */}
+                 <Text style={[styles.inputLabel, {marginTop: 10}]}>Custom Payouts (Leave blank for auto)</Text>
+                 <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                     <View style={{flex: 1, marginRight: 5}}>
+                         <TextInput style={styles.modalInput} value={payoutQ1} onChangeText={setPayoutQ1} placeholder="Q1 $" placeholderTextColor="#666" keyboardType="numeric"/>
+                     </View>
+                     <View style={{flex: 1, marginLeft: 5}}>
+                         <TextInput style={styles.modalInput} value={payoutQ2} onChangeText={setPayoutQ2} placeholder="Q2 $" placeholderTextColor="#666" keyboardType="numeric"/>
+                     </View>
+                 </View>
+                 <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
+                     <View style={{flex: 1, marginRight: 5}}>
+                         <TextInput style={styles.modalInput} value={payoutQ3} onChangeText={setPayoutQ3} placeholder="Q3 $" placeholderTextColor="#666" keyboardType="numeric"/>
+                     </View>
+                     <View style={{flex: 1, marginLeft: 5}}>
+                         <TextInput style={styles.modalInput} value={payoutFinal} onChangeText={setPayoutFinal} placeholder="Final $" placeholderTextColor="#666" keyboardType="numeric"/>
+                     </View>
+                 </View>
+
+                 <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 15}}>
+                    <Text style={{color: '#fff', marginRight: 10}}>Visibility:</Text>
+                    <TouchableOpacity onPress={() => setSettingsPublic(!settingsPublic)} style={{backgroundColor: settingsPublic ? THEME.primary : '#333', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 5}}>
+                        <Text style={{color: '#fff', fontWeight: 'bold'}}>{settingsPublic ? "PUBLIC" : "PRIVATE"}</Text>
+                    </TouchableOpacity>
+                 </View>
+
                  <Button title="Save Game Details" color={THEME.primary} onPress={handleUpdateSettings} />
 
                  <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
@@ -499,20 +618,11 @@ export default function GameScreen({ route, navigation }) {
                  <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
                  
                  <Text style={styles.sectionHeader}>⚙️ Grid Management</Text>
-                 
-                 <TouchableOpacity style={styles.actionBtn} onPress={handleRandomizeNumbers}>
-                    <Text style={styles.actionBtnText}>🎲 Randomize Axis Numbers</Text>
-                 </TouchableOpacity>
-                 <TouchableOpacity style={[styles.actionBtn, { marginTop: 10, borderColor: THEME.red }]} onPress={handleClearNumbers}>
-                    <Text style={[styles.actionBtnText, { color: THEME.red }]}>🚫 Clear Numbers</Text>
-                 </TouchableOpacity>
+                 <TouchableOpacity style={styles.actionBtn} onPress={handleRandomizeNumbers}><Text style={styles.actionBtnText}>🎲 Randomize Axis Numbers</Text></TouchableOpacity>
+                 <TouchableOpacity style={[styles.actionBtn, { marginTop: 10, borderColor: THEME.red }]} onPress={handleClearNumbers}><Text style={[styles.actionBtnText, { color: THEME.red }]}>🚫 Clear Numbers</Text></TouchableOpacity>
                  
                  <View style={{height: 20}}/>
-                 {/* SHARE BUTTON FOR ADMIN */}
-                 <TouchableOpacity 
-                    style={[styles.actionBtn, { backgroundColor: '#444', marginTop: 10, flexDirection: 'row', justifyContent: 'center' }]} 
-                    onPress={handleShare}
-                 >
+                 <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#444', marginTop: 10, flexDirection: 'row', justifyContent: 'center' }]} onPress={handleShare}>
                     <Ionicons name="share-outline" size={20} color="#FFF" style={{ marginRight: 8 }} />
                     <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Share Game</Text>
                  </TouchableOpacity>
@@ -525,6 +635,7 @@ export default function GameScreen({ route, navigation }) {
     }
 
     // --- READ ONLY VIEW (For Players) ---
+    // Calculate winners for display
     const quarters = ['q1', 'q2', 'q3', 'final'];
     const winners = quarters.map(q => {
         const loc = getWinningCoords(q);
@@ -535,7 +646,7 @@ export default function GameScreen({ route, navigation }) {
     });
 
     return (
-        <ScrollView style={{flex: 1, padding: 10}}>
+        <ScrollView style={{flex: 1, padding: 10}} showsVerticalScrollIndicator={false}>
              <GamePoolCard data={{
                  title: gridData.name || "Game Pool",
                  host: gridData.hostName || "Host",
@@ -544,29 +655,19 @@ export default function GameScreen({ route, navigation }) {
                  squaresSold: stats.taken,
                  totalSquares: stats.total,
                  costPerSquare: price,
-                 totalPot: pot,
-                 payouts: payouts
+                 totalPot: netPot,
+                 payouts: displayPayouts
              }}/>
              
-             {/* Follow Button Integrated Here */}
              <View style={{ marginTop: 15, alignItems: 'center' }}>
-                <TouchableOpacity 
-                    style={[styles.actionBtn, { backgroundColor: isFollowing ? THEME.primary : '#333', width: '100%', flexDirection: 'row', justifyContent: 'center' }]} 
-                    onPress={handleToggleFollow}
-                >
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: isFollowing ? THEME.primary : '#333', width: '100%', flexDirection: 'row', justifyContent: 'center' }]} onPress={handleToggleFollow}>
                     <Ionicons name={isFollowing ? "star" : "star-outline"} size={20} color={isFollowing ? "#FFF" : THEME.primary} style={{ marginRight: 8 }} />
-                    <Text style={{ color: isFollowing ? '#FFF' : THEME.primary, fontWeight: 'bold' }}>
-                        {isFollowing ? "Following Game" : "Follow Game"}
-                    </Text>
+                    <Text style={{ color: isFollowing ? '#FFF' : THEME.primary, fontWeight: 'bold' }}>{isFollowing ? "Following Game" : "Follow Game"}</Text>
                 </TouchableOpacity>
              </View>
 
-             {/* SHARE BUTTON FOR PLAYERS */}
              <View style={{ marginTop: 10, alignItems: 'center' }}>
-                <TouchableOpacity 
-                    style={[styles.actionBtn, { backgroundColor: '#444', width: '100%', flexDirection: 'row', justifyContent: 'center' }]} 
-                    onPress={handleShare}
-                >
+                <TouchableOpacity style={[styles.actionBtn, { backgroundColor: '#444', width: '100%', flexDirection: 'row', justifyContent: 'center' }]} onPress={handleShare}>
                     <Ionicons name="share-outline" size={20} color="#FFF" style={{ marginRight: 8 }} />
                     <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Share Game</Text>
                 </TouchableOpacity>
@@ -582,22 +683,16 @@ export default function GameScreen({ route, navigation }) {
                  ))}
              </View>
              
-             {/* LOGIN FOR ADMIN */}
              {!user && (
                  <View style={{marginTop: 30, padding: 15, borderTopWidth: 1, borderColor: '#333'}}>
                      <Text style={{color: '#666', marginBottom: 10, textAlign: 'center'}}>Admin Login</Text>
                      <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={[styles.modalInput, {marginBottom: 10}]} placeholderTextColor="#666" autoCapitalize="none"/>
                      <TextInput placeholder="Password" value={password} onChangeText={setPassword} style={[styles.modalInput, {marginBottom: 10}]} secureTextEntry placeholderTextColor="#666"/>
                      <View style={{ marginTop: 10 }}>
-                        {isLoggingIn ? (
-                            <ActivityIndicator size="small" color={THEME.primary} />
-                        ) : (
-                            <Button title="Login" color={THEME.accent} onPress={handleLogin} />
-                        )}
+                        {isLoggingIn ? (<ActivityIndicator size="small" color={THEME.primary} />) : (<Button title="Login" color={THEME.accent} onPress={handleLogin} />)}
                      </View>
                  </View>
              )}
-             
              <View style={{height: 50}}/>
         </ScrollView>
     );
@@ -607,7 +702,6 @@ export default function GameScreen({ route, navigation }) {
     <>
       <View style={styles.tabBar}>
         {['q1','q2','q3','final'].map(q => {
-          // --- UPDATED LOGIC TO SHOW SCORE IF EXISTS ---
           const scoreData = scores[q];
           const hasScore = scoreData && scoreData.top !== '' && scoreData.left !== '';
           const scoreText = hasScore ? `${scoreData.top} - ${scoreData.left}` : null;
@@ -627,7 +721,7 @@ export default function GameScreen({ route, navigation }) {
       <View style={styles.centeredView}>
         <View style={[styles.boardConstrainer, isWide && { maxWidth: '100%', paddingHorizontal: 20 }]}>
           <View style={{alignItems: 'center', paddingVertical: 10, paddingLeft: 80}}> 
-               <Text style={[styles.topTeamLabel, {color: getTeamColor(gridData.topTeam)}]}>{gridData.topTeam?.toUpperCase() || "AWAY"}</Text>
+               <Text style={[styles.axisLabel, {color: getTeamColor(gridData.topTeam)}]}>{gridData.topTeam?.toUpperCase() || "AWAY"}</Text>
           </View>
           <View style={{flexDirection: 'row', flex: 1}}>
                <View style={styles.leftLabelContainer}>
@@ -656,7 +750,6 @@ export default function GameScreen({ route, navigation }) {
                  <Text style={[playerStyles.statsValue, stats.isFull && {color: THEME.accent}]}>{stats.taken} / {stats.total}</Text>
              </View>
              <View style={playerStyles.progressBarBg}>
-                {/* Dynamically calculate width based on percentage */}
                 <View style={[playerStyles.progressBarFill, { width: `${(stats.taken / stats.total) * 100}%` }]} />
              </View>
         </View>
@@ -668,7 +761,6 @@ export default function GameScreen({ route, navigation }) {
                 <TextInput style={[playerStyles.input, {flex: 2}]} placeholder="Name" placeholderTextColor="#666" value={pmName} onChangeText={setPmName} editable={!stats.isFull}/>
                 <TextInput style={[playerStyles.input, {flex: 1, marginLeft: 10}]} placeholder="#" placeholderTextColor="#666" keyboardType="numeric" value={pmCount} onChangeText={setPmCount} editable={!stats.isFull}/>
             </View>
-            {/* Added Note Input */}
             <View style={[playerStyles.row, { marginTop: 10 }]}>
                 <TextInput style={[playerStyles.input, { flex: 1 }]} placeholder="Note (e.g. Paid)" placeholderTextColor="#666" value={pmNote} onChangeText={setPmNote} editable={!stats.isFull}/>
             </View>
@@ -690,7 +782,6 @@ export default function GameScreen({ route, navigation }) {
             contentContainerStyle={{paddingBottom: 100, paddingHorizontal: 15}}
             renderItem={({item}) => (
                 <View style={[playerStyles.playerRow, {alignItems: 'center', flexDirection: 'row'}]}>
-                    {/* LEFT SIDE - CLICK TO EDIT */}
                     <TouchableOpacity 
                         style={{flex: 1, flexDirection: 'row', alignItems: 'center'}}
                         onPress={() => openPlayerEditModal(item)}
@@ -708,7 +799,6 @@ export default function GameScreen({ route, navigation }) {
                         </View>
                     </TouchableOpacity>
                     
-                    {/* RIGHT SIDE - TOGGLE ONLY - NO EDIT TRIGGER */}
                     <View style={{alignItems: 'center', marginLeft: 10, width: 50}}>
                         <Text style={{color: '#666', fontSize: 8, marginBottom: 2}}>SHOW</Text>
                         <Switch 
@@ -726,8 +816,6 @@ export default function GameScreen({ route, navigation }) {
 
   return (
     <SafeAreaView style={styles.container}>
-      {/* BrandHeader REMOVED */}
-      
       {/* SCOREBOARD HEADER */}
       <View style={styles.scoreboard}>
         <TouchableOpacity onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Home')} style={{paddingRight: 15}}>
@@ -744,10 +832,9 @@ export default function GameScreen({ route, navigation }) {
               <Text style={styles.bigScore}>{scores[activeQuarter]?.top || "-"}</Text>
            </View>
         </View>
-        
-        {/* LOGO on Right */}
         <View style={{marginLeft: 15}}>
-            <Image source={require('../../assets/logo.png')} style={{width: 40, height: 40, resizeMode: 'contain'}} />
+          {/* Logo component could be used here if needed */}
+           <Image source={require('../../assets/logo.png')} style={{width: 40, height: 40, resizeMode: 'contain'}} />
         </View>
       </View>
 
@@ -775,14 +862,7 @@ export default function GameScreen({ route, navigation }) {
         {activeTab === 'players' && renderPlayersTab()}
       </View>
 
-      {/* FLOATING ACTION BUTTONS */}
-      {/* Share FAB removed - Moved to Info Tab */}
-      
-      {/* Follow FAB removed - Moved to Info Tab */}
-
-
-      {/* --- MODALS (Admin Modal removed - functionality moved to Info Tab) --- */}
-      {/* 1. SQUARE DETAILS */}
+      {/* MODALS */}
       <Modal visible={showDetailsModal} transparent={true} animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDetailsModal(false)}>
             <View style={styles.detailCard}>
@@ -803,7 +883,6 @@ export default function GameScreen({ route, navigation }) {
         </TouchableOpacity>
       </Modal>
 
-      {/* 2. EDIT SQUARE MANUAL */}
       <Modal visible={showEditModal} transparent={true} animationType="slide">
         <View style={styles.modalOverlay}>
             <View style={styles.detailCard}>
@@ -817,7 +896,6 @@ export default function GameScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      {/* 3. EDIT PLAYER (ADMIN) */}
       <Modal visible={showPlayerEditModal} transparent={true} animationType="slide">
          <View style={styles.modalOverlay}>
              <View style={styles.detailCard}>
@@ -839,8 +917,6 @@ export default function GameScreen({ route, navigation }) {
          </View>
       </Modal>
 
-      {/* 4. ADMIN MODAL IS REMOVED - Logic moved to Info Tab */}
-      
       {/* 5. IMPORT REVIEW MODAL */}
       <ImportReviewModal visible={importModalVisible} isLoading={isImporting} importedPlayers={scannedPlayers} onClose={() => setImportModalVisible(false)} onConfirm={confirmImport} />
 

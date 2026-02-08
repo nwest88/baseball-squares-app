@@ -1,10 +1,10 @@
 import { StyleSheet } from 'react-native';
 import { THEME } from '../theme/index';
 
-export default StyleSheet.create({
+export const styles = StyleSheet.create({
   // 1. MAIN CONTAINER
   cardContainer: {
-    backgroundColor: THEME.card, // Now White in Moyer Theme
+    backgroundColor: THEME.colors.background, // Now White in Moyer Theme
     borderRadius: 16,
     padding: 16,
     marginVertical: 10,

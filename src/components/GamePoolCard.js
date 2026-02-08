@@ -1,6 +1,6 @@
 import React from 'react';
 import { View, Text } from 'react-native';
-import styles from '../styles/GamePoolCard.styles';
+import { styles } from '../styles/GamePoolCard.styles'; // <--- Named Import
 
 // Dummy Data Default
 const DUMMY_DATA = {
@@ -10,18 +10,21 @@ const DUMMY_DATA = {
   teamB: "KC",
   squaresSold: 12,
   totalSquares: 100,
-  costPerSquare: 20,
+  costPerSquare: 25,
   totalPot: 2000,
-  payouts: { q1: 250, q2: 500, q3: 250, final: 1000 }
+  payouts: { q1: 150, q2: 150, q3: 150, final: 250 }
 };
 
 export default function GamePoolCard({ data = DUMMY_DATA }) {
+  // Safety check for payouts object
+  const payouts = data.payouts || { q1: 0, q2: 0, q3: 0, final: 0 };
+
   return (
     <View style={styles.cardContainer}>
       
       {/* 1. HEADER SECTION */}
       <View style={styles.header}>
-        <Text style={styles.title}>{data.title}</Text>
+        <Text style={styles.title} numberOfLines={1} adjustsFontSizeToFit>{data.title}</Text>
         <Text style={styles.subtitle}>{data.host}</Text>
         <View style={styles.divider} />
       </View>
@@ -53,29 +56,28 @@ export default function GamePoolCard({ data = DUMMY_DATA }) {
 
         {/* Column 3: Pot */}
         <View style={styles.statCol}>
-          {/* Using styles.textGold instead of inline Theme import */}
           <Text style={[styles.statValue, styles.textGold]}>${data.totalPot}</Text>
-          <Text style={styles.statLabel}>TOTAL POT</Text>
+          <Text style={styles.statLabel}>WINNABLE</Text>
         </View>
       </View>
 
-      {/* 4. PAYOUT DETAILS */}
+      {/* 4. PAYOUT DETAILS (New) */}
       <View style={styles.payoutRow}>
         <View style={styles.payoutCol}>
-          <Text style={styles.payoutLabel}>QTR 1</Text>
-          <Text style={styles.payoutValue}>${data.payouts.q1}</Text>
+          <Text style={styles.payoutLabel}>Q1</Text>
+          <Text style={styles.payoutValue}>${payouts.q1}</Text>
         </View>
         <View style={styles.payoutCol}>
           <Text style={styles.payoutLabel}>HALF</Text>
-          <Text style={styles.payoutValue}>${data.payouts.q2}</Text>
+          <Text style={styles.payoutValue}>${payouts.q2}</Text>
         </View>
         <View style={styles.payoutCol}>
-          <Text style={styles.payoutLabel}>QTR 3</Text>
-          <Text style={styles.payoutValue}>${data.payouts.q3}</Text>
+          <Text style={styles.payoutLabel}>Q3</Text>
+          <Text style={styles.payoutValue}>${payouts.q3}</Text>
         </View>
         <View style={styles.payoutCol}>
           <Text style={styles.payoutLabel}>FINAL</Text>
-          <Text style={[styles.payoutValue, styles.textGold]}>${data.payouts.final}</Text>
+          <Text style={[styles.payoutValue, styles.textGold]}>${payouts.final}</Text>
         </View>
       </View>
 

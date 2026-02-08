@@ -3,7 +3,7 @@ import { View, Text, TouchableOpacity, SafeAreaView, ActivityIndicator, ScrollVi
 import { StatusBar } from 'expo-status-bar';
 import { collection, onSnapshot, query, orderBy } from 'firebase/firestore'; 
 import { useFocusEffect } from '@react-navigation/native'; 
-import { Ionicons } from '@expo/vector-icons'; // Added for icons
+import { Ionicons } from '@expo/vector-icons'; 
 
 import { db } from '../../firebaseConfig'; 
 import { THEME } from '../theme/index.js';
@@ -32,7 +32,6 @@ export default function HomeScreen({ navigation }) {
   const isWide = width > 768; 
 
   // --- A. LISTEN TO FIREBASE DATA ---
-  // (Auth listener removed because AuthContext handles it now)
   useEffect(() => {
     const q = query(collection(db, "squares_pool"), orderBy("createdAt", "desc")); 
     const unsubData = onSnapshot(q, (snapshot) => {
@@ -50,7 +49,6 @@ export default function HomeScreen({ navigation }) {
         if (dataLoading || allData.length === 0) return;
 
         const filterGames = async () => {
-            // Use 'user' from Context instead of getAuth()
             const currentUserId = user?.uid;
             
             const followedIds = await getFollowedGames();
@@ -87,15 +85,8 @@ export default function HomeScreen({ navigation }) {
         };
 
         filterGames();
-    }, [allData, dataLoading, user, searchText]) // Re-run if user or search changes
+    }, [allData, dataLoading, user, searchText]) 
   );
-
-  const handleSearch = () => {
-    if (searchText.length > 0) {
-       // Could navigate to specific game if ID matches exactly, 
-       // but for now the filter above handles it visually.
-    }
-  };
 
   const mapGameToCardData = (game) => {
       const cols = game.gridCols || 10;
@@ -131,7 +122,23 @@ export default function HomeScreen({ navigation }) {
           netPot = Math.max(0, grossPot - cutAmount);
       }
 
-      const qtrPayout = netPot > 0 ? netPot / 4 : 0; 
+      // --- UPDATED PAYOUT LOGIC ---
+      let payouts = { q1: 0, q2: 0, q3: 0, final: 0 };
+
+      if (game.customPayouts) {
+          // Use the overrides from DB if they exist
+          payouts = {
+              q1: game.customPayouts.q1 || 0,
+              q2: game.customPayouts.q2 || 0,
+              q3: game.customPayouts.q3 || 0,
+              final: game.customPayouts.final || 0
+          };
+      } else {
+          // Fallback to Default 4-way split
+          const qtrPayout = netPot > 0 ? netPot / 4 : 0; 
+          payouts = { q1: qtrPayout, q2: qtrPayout, q3: qtrPayout, final: qtrPayout };
+      }
+      // ----------------------------
 
       return {
           title: game.name || "Unnamed Pool",
@@ -142,7 +149,7 @@ export default function HomeScreen({ navigation }) {
           totalSquares: totalSquares,
           costPerSquare: price,
           totalPot: netPot,
-          payouts: { q1: qtrPayout, q2: qtrPayout, q3: qtrPayout, final: qtrPayout }
+          payouts: payouts // <--- Now uses custom if available
       };
   };
 
@@ -190,7 +197,6 @@ export default function HomeScreen({ navigation }) {
       <View style={Platform.OS === 'web' ? { maxWidth: 800, width: '100%', alignSelf: 'center', flex: 1 } : { flex: 1 }}>
         <BrandHeader title="Dashboard" />
         
-        {/* --- PHASE 3: STATUS BAR & SEARCH --- */}
         <View style={{ paddingHorizontal: 20, marginBottom: 10 }}>
           {/* Auth Row */}
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15 }}>
@@ -245,7 +251,6 @@ export default function HomeScreen({ navigation }) {
 
         <TouchableOpacity 
           style={styles.fab} 
-          // Trigger Login if guest, otherwise Create
           onPress={() => user ? navigation.navigate('Create') : showLogin()}
           activeOpacity={0.8}
         >
