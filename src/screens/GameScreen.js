@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator, Share, Platform, useWindowDimensions, FlatList, Switch, KeyboardAvoidingView, StyleSheet, Image } from 'react-native';
+import { View, Text, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator, Share, Platform, useWindowDimensions, FlatList, Switch, KeyboardAvoidingView, StyleSheet, Image, TouchableWithoutFeedback } from 'react-native';
 import { doc, onSnapshot, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
@@ -7,7 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { db, auth } from '../../firebaseConfig'; 
 import GridBoard from '../components/GridBoard'; 
 import GamePoolCard from '../components/GamePoolCard';
-// BrandHeader removed for compact layout
+// BrandHeader removed
 import ImportReviewModal from '../components/ImportReviewModal';
 
 // Styles & Theme
@@ -38,11 +38,11 @@ export default function GameScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(""); 
   const [isFollowing, setIsFollowing] = useState(false);
-  const [isLoggingIn, setIsLoggingIn] = useState(false); // New state for login loading
+  const [isLoggingIn, setIsLoggingIn] = useState(false); 
 
   // --- TAB STATE ---
-  const [activeTab, setActiveTab] = useState('squares'); // 'info' | 'squares' | 'players'
-  const [activeQuarter, setActiveQuarter] = useState('q1'); // Sub-tab for 'squares'
+  const [activeTab, setActiveTab] = useState('squares'); 
+  const [activeQuarter, setActiveQuarter] = useState('q1'); 
 
   // --- HIGHLIGHT STATE (Array) ---
   const [highlightedPlayers, setHighlightedPlayers] = useState([]);
@@ -73,13 +73,11 @@ export default function GameScreen({ route, navigation }) {
   const [settingsCut, setSettingsCut] = useState("");     
   const [settingsPublic, setSettingsPublic] = useState(true);
   
-  // --- LOCK STATE REMOVED --- 
-
   // --- PLAYER MANAGER STATE ---
   const [pmName, setPmName] = useState("");
   const [pmCount, setPmCount] = useState("");
   const [pmNote, setPmNote] = useState("");
-  const [selectedPlayer, setSelectedPlayer] = useState(null); // For Player Edit Modal
+  const [selectedPlayer, setSelectedPlayer] = useState(null); 
   const [showPlayerEditModal, setShowPlayerEditModal] = useState(false);
   const [playerEditNote, setPlayerEditNote] = useState("");
   const [playerEditCount, setPlayerEditCount] = useState(""); 
@@ -115,8 +113,6 @@ export default function GameScreen({ route, navigation }) {
             }));
         }
 
-        // Only sync settings if we aren't editing them right now
-        // NOTE: We sync these to state so the Admin Info tab is populated
         if (!showAdminModal) {
             setSettingsName(data.name || "");
             setSettingsHost(data.hostName || ""); 
@@ -141,7 +137,6 @@ export default function GameScreen({ route, navigation }) {
     return () => { unsubDocs(); unsubAuth(); };
   }, [gameId, showAdminModal]); 
 
-  // Check Admin Status
   const isAdmin = user && gridData.adminId && user.uid === gridData.adminId;
 
 
@@ -157,7 +152,6 @@ export default function GameScreen({ route, navigation }) {
     return '#444';
   };
 
-  // --- WINNER CALCULATION ---
   const getWinningCoords = (quarterKey) => {
     if (!gridData.topAxis || !gridData.leftAxis) return null;
     const currentScores = scores[quarterKey];
@@ -176,7 +170,6 @@ export default function GameScreen({ route, navigation }) {
 
   const winningLoc = getWinningCoords(activeQuarter); 
 
-  // --- PLAYER STATS ---
   const getBoardStats = () => {
     const cols = gridData.gridCols || 10;
     const rows = gridData.gridRows || 10;
@@ -222,7 +215,6 @@ export default function GameScreen({ route, navigation }) {
   // 3. ACTION HANDLERS
   // ===============================================================
 
-  // --- Highlight Toggle Logic ---
   const togglePlayerHighlight = (playerName) => {
     setHighlightedPlayers(prev => {
         if (prev.includes(playerName)) {
@@ -271,7 +263,6 @@ export default function GameScreen({ route, navigation }) {
     else Alert.alert("Auto Mode", "Use the 'Players' tab to assign squares.");
   };
 
-  // --- PLAYER MANAGEMENT HANDLERS ---
   const handleAutoAssign = async () => {
     const stats = getBoardStats();
     if (!isAdmin || stats.isFull) return;
@@ -341,7 +332,6 @@ export default function GameScreen({ route, navigation }) {
       } catch (e) { Alert.alert("Error", e.message); }
   };
 
-  // --- AI IMPORT HANDLERS ---
   const startImport = async () => {
     if (!isAdmin) return;
     setImportModalVisible(true);
@@ -375,7 +365,7 @@ export default function GameScreen({ route, navigation }) {
 
   // --- GENERIC SETTINGS HANDLERS ---
   const handleLogin = async () => { 
-      // 1. Validation check before trying to sign in
+      // 1. Validation check
       if (!email.trim() || !password.trim()) {
           const msg = "Please enter both email and password.";
           if (Platform.OS === 'web') window.alert(msg);
@@ -389,13 +379,12 @@ export default function GameScreen({ route, navigation }) {
           setEmail(""); 
           setPassword(""); 
       } catch (e) { 
-          console.error("Login failed", e); // Log specific error to console for debug
-          
+          console.error("Login failed", e); 
           let friendlyMsg = e.message;
           if (e.code === 'auth/invalid-email') friendlyMsg = "Invalid email address format.";
           if (e.code === 'auth/user-not-found') friendlyMsg = "No user found with this email.";
           if (e.code === 'auth/wrong-password') friendlyMsg = "Incorrect password.";
-          if (e.code === 'auth/invalid-credential') friendlyMsg = "Invalid credentials. Please try again.";
+          if (e.code === 'auth/invalid-credential') friendlyMsg = "Invalid credentials.";
 
           if (Platform.OS === 'web') {
               window.alert("Login Error: " + friendlyMsg);
@@ -412,73 +401,41 @@ export default function GameScreen({ route, navigation }) {
   const updateScoreInput = (q, team, val) => { setScores(prev => ({ ...prev, [q]: { ...(prev[q] || {}), [team]: val } })); };
   
   const handleClearNumbers = async () => {
-      // Logic to clear numbers
       const doClear = async () => {
           try { 
               await updateDoc(doc(db, "squares_pool", gameId), { topAxis: Array(10).fill("?"), leftAxis: Array(10).fill("?") }); 
-              if (Platform.OS === 'web') {
-                  window.alert("Success: Numbers Cleared!");
-              } else {
-                  Alert.alert("Success", "Numbers Cleared!"); 
-              }
+              if (Platform.OS === 'web') window.alert("Success: Numbers Cleared!");
+              else Alert.alert("Success", "Numbers Cleared!"); 
           } catch (e) { 
-              if (Platform.OS === 'web') {
-                  window.alert("Error: " + e.message);
-              } else {
-                  Alert.alert("Error", e.message); 
-              }
+              if (Platform.OS === 'web') window.alert("Error: " + e.message);
+              else Alert.alert("Error", e.message); 
           }
       };
 
       if (Platform.OS === 'web') {
-          if (window.confirm("Clear Axis Numbers?\n\nThis will reset all row and column headers to '?'")) {
-              doClear();
-          }
+          if (window.confirm("Clear Axis Numbers?\n\nThis will reset all row and column headers to '?'")) doClear();
       } else {
-          Alert.alert(
-              "Clear Axis Numbers?", 
-              "This will reset all row and column headers to '?'", 
-              [
-                  { text: "Cancel", style: "cancel" }, 
-                  { text: "Clear", style: "destructive", onPress: doClear }
-              ]
-          );
+          Alert.alert("Clear Axis Numbers?", "This will reset all row and column headers to '?'", [{ text: "Cancel", style: "cancel" }, { text: "Clear", style: "destructive", onPress: doClear }]);
       }
   };
   
   const handleRandomizeNumbers = async () => { 
-      // Logic to randomize numbers
       const doRandomize = async () => {
           const gen = (s) => Array.from({length:s},(_,i)=>i).sort(()=>Math.random()-0.5); 
           try { 
               await updateDoc(doc(db, "squares_pool", gameId), { topAxis: gen(10), leftAxis: gen(10) }); 
-              if (Platform.OS === 'web') {
-                  window.alert("Success: Numbers Randomized!");
-              } else {
-                  Alert.alert("Success", "Numbers Randomized!"); 
-              }
+              if (Platform.OS === 'web') window.alert("Success: Numbers Randomized!");
+              else Alert.alert("Success", "Numbers Randomized!"); 
           } catch (e) { 
-              if (Platform.OS === 'web') {
-                  window.alert("Error: " + e.message);
-              } else {
-                  Alert.alert("Error", e.message); 
-              }
+              if (Platform.OS === 'web') window.alert("Error: " + e.message);
+              else Alert.alert("Error", e.message); 
           } 
       };
 
       if (Platform.OS === 'web') {
-          if (window.confirm("Randomize Axis Numbers?\n\nAre you sure? If you have already shared this game or it is currently live, changing the numbers will disrupt the game for everyone.")) {
-              doRandomize();
-          }
+          if (window.confirm("Randomize Axis Numbers?\n\nAre you sure?")) doRandomize();
       } else {
-          Alert.alert(
-              "Randomize Axis Numbers?",
-              "Are you sure? If you have already shared this game or it is currently live, changing the numbers will disrupt the game for everyone.",
-              [
-                  { text: "Cancel", style: "cancel" },
-                  { text: "Randomize", style: "destructive", onPress: doRandomize }
-              ]
-          );
+          Alert.alert("Randomize Axis Numbers?", "Are you sure?", [{ text: "Cancel", style: "cancel" }, { text: "Randomize", style: "destructive", onPress: doRandomize }]);
       }
   };
   
@@ -511,7 +468,6 @@ export default function GameScreen({ route, navigation }) {
   const payouts = { q1: pot * 0.125, q2: pot * 0.25, q3: pot * 0.125, final: pot * 0.5 }; 
 
   const renderInfoTab = () => {
-    // If ADMIN, show the Edit Panel instead of just read-only info
     if (isAdmin) {
         return (
             <ScrollView style={{flex: 1, padding: 15}}>
@@ -700,6 +656,7 @@ export default function GameScreen({ route, navigation }) {
                  <Text style={[playerStyles.statsValue, stats.isFull && {color: THEME.accent}]}>{stats.taken} / {stats.total}</Text>
              </View>
              <View style={playerStyles.progressBarBg}>
+                {/* Dynamically calculate width based on percentage */}
                 <View style={[playerStyles.progressBarFill, { width: `${(stats.taken / stats.total) * 100}%` }]} />
              </View>
         </View>
