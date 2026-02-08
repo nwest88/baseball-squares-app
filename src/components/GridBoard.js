@@ -1,21 +1,22 @@
 import React from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
-import { styles } from '../styles/GridBoard.styles'; // <--- 1. Use Shared Styles
+import { styles } from '../styles/GridBoard.styles';
+import { THEME } from '../theme';
 
 export default function GridBoard({ 
   gridData = {},    
   topAxis = [],     
   leftAxis = [],    
   winningLoc = null,
+  highlightedPlayers = [], 
   onSquarePress,
-  isWide = false // <--- 2. Add Prop
+  isWide = false 
 }) {
 
-  // DYNAMIC RECTANGLE LOGIC:
+  // Dynamic sizing logic
   const colCount = topAxis.length || 10;
   const rowCount = leftAxis.length || 10;
 
-  // 3. Logic: If Wide Screen OR Small Grid -> Use Big Squares
   let baseSize = 45;
   if (isWide) baseSize = 65;
   if (colCount <= 5) baseSize = 65; 
@@ -24,7 +25,6 @@ export default function GridBoard({
 
   const getInitials = (ownerData) => {
     if (!ownerData) return "";
-    // Check if it's an object (New Format) or String (Old Format)
     const name = (typeof ownerData === 'object' && ownerData !== null) 
                  ? ownerData.name 
                  : ownerData;
@@ -45,16 +45,12 @@ export default function GridBoard({
       <ScrollView 
         showsVerticalScrollIndicator={false} 
         contentContainerStyle={{paddingBottom: 50}}
-        // --- FIX: STOP BOUNCING ---
         bounces={false} 
         overScrollMode="never"
       >
-        
-        {/* Removed internal centering to fix layout jitter. 
-            The parent container (GameScreen) now handles the centering. */}
         <View style={{ flexDirection: 'row' }}>
           
-          {/* === LEFT COLUMN === */}
+          {/* === LEFT COLUMN (Y-Axis) === */}
           <View style={{ width: CELL_SIZE }}>
             <View style={[styles.cornerCell, {width: CELL_SIZE, height: CELL_SIZE}]}>
                <Text style={{color: '#444', fontSize: 10}}>Q/S</Text>
@@ -70,14 +66,12 @@ export default function GridBoard({
             })}
           </View>
 
-          {/* === RIGHT AREA === */}
+          {/* === RIGHT AREA (X-Axis + Grid) === */}
           <ScrollView 
             horizontal 
             showsHorizontalScrollIndicator={false}
-            // --- FIX: STOP BOUNCING ---
             bounces={false}
             overScrollMode="never"
-            // Removed contentContainerStyle centering here as well
           >
             <View>
               {/* TOP HEADER */}
@@ -100,6 +94,12 @@ export default function GridBoard({
                     const key = `${r}-${c}`;
                     const owner = gridData[key];
                     const initials = getInitials(owner);
+                    
+                    // --- HIGHLIGHT LOGIC ---
+                    const ownerName = owner ? (typeof owner === 'object' ? owner.name : owner) : null;
+                    const isHighlighted = highlightedPlayers && highlightedPlayers.includes(ownerName);
+
+                    // Winner Logic
                     const isWinningRow = winningLoc && winningLoc.row === r;
                     const isWinningCol = winningLoc && winningLoc.col === c;
                     const isWinner = isWinningRow && isWinningCol;
@@ -114,7 +114,8 @@ export default function GridBoard({
                           {width: CELL_SIZE, height: CELL_SIZE},
                           owner ? styles.takenCell : styles.freeCell,
                           (isWinningRow || isWinningCol) && styles.highlightCell,
-                          isWinner && styles.winningCell
+                          isWinner && styles.winningCell,
+                          isHighlighted && styles.playerHighlight
                         ]}
                       >
                         <Text style={[styles.cellText, isWinner && styles.winningCellText]}>

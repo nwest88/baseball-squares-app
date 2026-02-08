@@ -382,7 +382,7 @@ export default function PlayerManager({ route, navigation }) {
                 {/* --- AI BUTTON --- */}
                 {!stats.isFull && (
                   <TouchableOpacity 
-                    style={[styles.addBtn, { backgroundColor: THEME.secondary, marginTop: 12, flexDirection: 'row', justifyContent: 'center' }]} 
+                    style={[styles.addBtn, { background: THEME.secondary, marginTop: 12, flexDirection: 'row', justifyContent: 'center' }]} 
                     onPress={startImport}
                   >
                     <Ionicons name="camera" size={20} color="white" style={{marginRight: 8}} />

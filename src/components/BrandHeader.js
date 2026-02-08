@@ -1,22 +1,35 @@
 import React from 'react';
-import { View, Text } from 'react-native';
-import { THEME } from '../theme/index.js';
-import Logo from './logo';
-import { styles } from '../styles/BrandHeader.styles'; // <--- Import the shared fixed styles
+import { View, Image, Text, TouchableOpacity, StyleSheet } from 'react-native'; // Added StyleSheet
+import { useNavigation } from '@react-navigation/native';
+import { styles } from '../styles/BrandHeader.styles';
+import { THEME } from '../theme'; // Import THEME for the title color
 
-export default function BrandHeader({ title }) {
+export default function BrandHeader({ title }) { // Accept title prop
+  const navigation = useNavigation();
+
   return (
     <View style={styles.headerContainer}>
-      <View style={styles.logoWrapper}>
-        <Logo width={35} height={35} color={THEME.primary} />
+      {/* Left Side: Title (if provided) */}
+      <View style={{ flex: 1, justifyContent: 'center' }}>
+        {title && (
+          <Text style={localStyles.screenTitle}>{title}</Text>
+        )}
       </View>
-      
-      <View style={styles.logoTextContainer}>
-        <Text style={styles.logoTextMain}>QUIK SQUARES</Text>
-        <Text style={styles.logoTextSub}>Pool</Text>
-      </View>
-      {title && <View style={styles.divider} />}
-      {title && <Text style={styles.screenTitle}>{title}</Text>}
+
+      {/* Right Side: Brand Logo & Name */}
+      <TouchableOpacity onPress={() => navigation.navigate('Home')} style={styles.logoContainer}>
+        <Text style={styles.brandText}>QuikSquares</Text>
+        <Image source={require('../../assets/logo.png')} style={styles.logo} />
+      </TouchableOpacity>
     </View>
   );
 }
+
+const localStyles = StyleSheet.create({
+  screenTitle: {
+    color: THEME.primary, // Or THEME.text / THEME.primary depending on preference
+    fontSize: 24,
+    fontWeight: 'bold',
+    letterSpacing: 0.5,
+  }
+});

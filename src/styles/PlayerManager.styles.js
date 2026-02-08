@@ -1,44 +1,166 @@
-import { StyleSheet, Platform, StatusBar } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { THEME } from '../theme/index';
 
+export const styles = StyleSheet.create({
+  // --- Stats Section ---
+  statsContainer: {
+    padding: 15,
+    backgroundColor: THEME.card, // Was #111
+    borderBottomWidth: 1,
+    borderColor: '#333',
+  },
+  statsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 5,
+  },
+  statsLabel: {
+    color: '#888', // Consider adding a subtext color to theme if not present
+    fontSize: 12,
+    fontWeight: 'bold',
+    letterSpacing: 1,
+  },
+  statsValue: {
+    color: THEME.text, // Was #fff
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  progressBarBg: {
+    height: 6,
+    backgroundColor: '#333',
+    borderRadius: 3,
+    marginTop: 5,
+    overflow: 'hidden',
+  },
+  progressBarFill: {
+    height: '100%',
+    backgroundColor: THEME.primary,
+    borderRadius: 3,
+  },
 
-  ({
-  container: { flex: 1, backgroundColor: THEME.background, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0},
-  header: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 15, borderBottomWidth: 1, borderColor: THEME.border },
-  backBtn: { color: THEME.primary, fontSize: 16 },
-  title: { color: '#fff', fontSize: 18, fontWeight: 'bold' },
-  
-  // STATS DASHBOARD
-  statsContainer: { padding: 20, borderBottomWidth: 1, borderColor: '#333' },
-  statsRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginBottom: 10 },
-  statsLabel: { color: '#888', fontWeight: 'bold', fontSize: 12 },
-  statsValue: { color: '#fff', fontWeight: 'bold', fontSize: 24 },
-  statsSubtext: { color: '#666', fontSize: 12, marginTop: 8, textAlign: 'right' },
-  progressBarBg: { height: 8, backgroundColor: '#333', borderRadius: 4, overflow: 'hidden' },
-  progressBarFill: { height: '100%', backgroundColor: THEME.accent },
+  // --- Form / Add Player Section ---
+  formCard: {
+    backgroundColor: THEME.cardLight, // Slightly lighter than card background
+    padding: 15,
+    margin: 15,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  input: {
+    backgroundColor: 'THEME.input', // Consider adding an input background color to theme
+    color: THEME.text,
+    padding: 12,
+    borderRadius: 5,
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: 'THEME.border',
+  },
+  addBtn: {
+    backgroundColor: THEME.primary,
+    padding: 12,
+    borderRadius: 5,
+    alignItems: 'center',
+    marginTop: 10,
+  },
+  disabledBtn: {
+    opacity: 0.5,
+  },
+  addBtnText: {
+    color: '#fff', // Button text usually stays white
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
 
-  // FORM CARDS
-  formCard: { margin: 15, padding: 15, backgroundColor: THEME.card, borderRadius: 12, borderWidth: 1, borderColor: THEME.border },
-  sectionTitle: { color: '#888', textTransform: 'uppercase', fontSize: 12, marginBottom: 10, fontWeight: 'bold' },
-  row: { flexDirection: 'row', marginBottom: 10 },
-  input: { backgroundColor: '#222', color: '#fff', padding: 12, borderRadius: 8, borderWidth: 1, borderColor: '#444' },
-  addBtn: { backgroundColor: THEME.primary, padding: 12, borderRadius: 8, alignItems: 'center' },
-  addBtnText: { color: '#fff', fontWeight: 'bold' },
-  disabledBtn: { backgroundColor: '#444' },
+  // --- Player List Items ---
+  playerRow: {
+    flexDirection: 'row',
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderColor: '#222',
+    alignItems: 'center',
+  },
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
+  avatarText: {
+    color: THEME.text,
+    fontWeight: 'bold',
+    fontSize: 16,
+  },
+  playerName: {
+    color: THEME.text,
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  badge: {
+    backgroundColor: '#333',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginRight: 5,
+  },
+  badgeText: {
+    color: THEME.text,
+    fontSize: 12,
+    fontWeight: 'bold',
+  },
+  playerNote: {
+    color: '#888',
+    fontSize: 12,
+    fontStyle: 'italic',
+  },
 
-  // ROSTER LIST
-  listContainer: { flex: 1, padding: 15 },
-  playerRow: { flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.card, padding: 12, marginBottom: 8, borderRadius: 8 },
-  avatar: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#333', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
-  avatarText: { color: THEME.gold, fontWeight: 'bold' },
-  playerName: { color: '#fff', fontSize: 16, fontWeight: 'bold' },
-  playerNote: { color: '#888', fontSize: 12, marginTop: 2 },
-  badge: { backgroundColor: THEME.accent, paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  badgeText: { color: '#fff', fontWeight: 'bold', fontSize: 12 },
-
-  // MODAL
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', padding: 20 },
-  modalCard: { width: '100%', backgroundColor: '#1E1E1E', padding: 20, borderRadius: 12, borderWidth: 1, borderColor: THEME.primary },
-  modalTitle: { fontSize: 20, fontWeight: 'bold', color: '#fff', marginBottom: 10 },
-  modalInput: { backgroundColor: '#333', color: '#fff', padding: 15, borderRadius: 8, marginBottom: 20, borderWidth: 1, borderColor: '#555' }
+  // --- Modals ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.85)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 400,
+    backgroundColor: '#1a1a1a', // Modal bg
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: 'THEME.border',
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 10,
+  },
+  modalTitle: {
+    color: THEME.text,
+    fontSize: 20,
+    fontWeight: 'bold',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  modalInput: {
+    backgroundColor: '#333',
+    color: THEME.text,
+    padding: 12,
+    borderRadius: 6,
+    marginBottom: 15,
+    width: '100%',
+    fontSize: 16,
+    borderWidth: 1,
+    borderColor: '#444',
+  },
 });

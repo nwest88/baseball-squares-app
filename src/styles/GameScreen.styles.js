@@ -1,82 +1,318 @@
-import { StyleSheet, Platform, StatusBar } from 'react-native';
+import { StyleSheet, Platform } from 'react-native';
 import { THEME } from '../theme/index';
 
 export const styles = StyleSheet.create({
-  // ... (Keep existing container, scoreboard, tab, board styles same as before) ...
-  container: { 
-    flex: 1, 
-    backgroundColor: THEME.background,
-    // --- FIX: Add padding ONLY on Android to clear the notification bar ---
-    paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0
-  },
-  scoreboard: { flexDirection: 'row', alignItems: 'center', padding: 15, backgroundColor: THEME.card, borderBottomWidth: 1, borderColor: THEME.border },
-  teamBadgeText: { fontWeight: 'bold', fontSize: 12, textTransform: 'uppercase' },
-  bigScore: { fontSize: 24, fontWeight: 'bold', color: '#fff' },
-  vsText: { color: '#666', fontWeight: 'bold', fontSize: 14, marginHorizontal: 15 },
-  tabBar: { flexDirection: 'row', borderBottomWidth: 1, borderColor: '#333' },
-  qTab: { flex: 1, paddingVertical: 12, alignItems: 'center', backgroundColor: THEME.card },
-  qTabActive: { borderBottomWidth: 3, borderColor: THEME.accent, backgroundColor: '#252525' },
-  qTabText: { color: '#666', fontWeight: 'bold' },
-  qTabTextActive: { color: THEME.accent },
-  centeredView: { flex: 1, alignItems: 'center' },
-  
-  // --- FIX: Revert to 100% width to fix "Sliver" bug. Use maxWidth to constrain on desktop. ---
-  boardConstrainer: { 
-    width: '100%',     // Always take full available width
-    maxWidth: 600,     // Cap it for desktop users so it doesn't look stretched
-    flex: 1, 
-    paddingBottom: 40, 
-    alignSelf: 'center',
-    alignItems: 'stretch' // Ensure children fill the width
+  container: {
+    flex: 1,
+    backgroundColor: THEME.colors.background,
   },
   
-  axisLabel: { fontWeight: 'bold', fontSize: 16 },
-  leftLabelContainer: { justifyContent: 'center', alignItems: 'center', width: 100, backgroundColor: 'transparent', zIndex: 1 },
-  teamLabelLeft: { fontWeight: 'bold', fontSize: 16, width: 260, textAlign: 'center', transform: [{ rotate: '-90deg' }] },
-  
-  // --- UPDATED FABS ---
-  // Bottom Left (Player Manager) - Unchanged
-  fabLeft: { position: 'absolute', bottom: 30, left: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
-  
-  // Bottom Right (Now the Share Button)
-  fabRight: { position: 'absolute', bottom: 30, right: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: '#666', justifyContent: 'center', alignItems: 'center', elevation: 5 },
-  
-  // Floating Above Bottom Right (Settings Button) - 30px bottom + 50px height + 15px gap = 95px
-  fabAbove: { position: 'absolute', bottom: 95, right: 30, width: 50, height: 50, borderRadius: 25, backgroundColor: THEME.card, borderWidth: 1, borderColor: THEME.primary, justifyContent: 'center', alignItems: 'center', elevation: 5 },
+  // --- Scoreboard ---
+  scoreboard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 15,
+    paddingVertical: 10,
+    backgroundColor: THEME.colors.background, 
+    borderBottomWidth: 1,
+    borderColor: THEME.colors.border,
+    height: 80, 
+  },
+  teamBadgeText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    marginBottom: 2,
+    letterSpacing: 1,
+  },
+  bigScore: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: THEME.text,
+    includeFontPadding: false,
+  },
+  vsText: {
+    color: '#666',
+    fontSize: 20,
+    marginHorizontal: 15,
+    marginTop: 10,
+  },
 
-  // ... (Keep existing modal styles) ...
-  modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.9)', justifyContent: 'center', alignItems: 'center', zIndex: 999 },
-  detailCard: { 
-    width: 300, 
-    backgroundColor: '#1E1E1E', 
-    borderRadius: 12, 
-    padding: 30, 
-    borderWidth: 2, 
-    borderColor: THEME.primary, 
-    alignItems: 'center', 
-    shadowColor: "#000", 
-    shadowOffset: { width: 0, height: 10 }, 
-    shadowOpacity: 0.8, 
-    shadowRadius: 25, 
-    elevation: 20, 
-    maxHeight: '80%',
-    // Fix for Web Shadow Deprecation Warning
-    boxShadow: '0px 10px 25px rgba(0,0,0,0.8)'
+  // --- Tabs (Refined for equal width) ---
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: THEME.colors.background,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    justifyContent: 'space-between', // Changed from center to space-between
+    borderBottomWidth: 1,
+    borderColor: '#333',
   },
-  detailTitle: { fontSize: 24, fontWeight: 'bold', color: '#FFFFFF', marginBottom: 20, borderBottomWidth: 1, borderBottomColor: '#333', width: '100%', textAlign: 'center', paddingBottom: 15 },
-  modalInput: { width: '100%', backgroundColor: '#333', color: '#fff', padding: 12, borderRadius: 8, marginBottom: 15, borderWidth: 1, borderColor: '#555' },
-  sectionHeader: { color: '#888', marginTop: 10, marginBottom: 10, fontSize: 12, textTransform: 'uppercase', alignSelf: 'flex-start', fontWeight: 'bold' },
-  scoreRow: { flexDirection: 'row', alignItems: 'center', marginBottom: 10, justifyContent: 'space-between', width: '100%' },
-  scoreLabel: { color: '#fff', width: 40, fontWeight: 'bold' },
-  smallScoreInput: { backgroundColor: '#222', color: '#fff', width: '35%', textAlign: 'center', padding: 10, borderRadius: 8, borderWidth: 1, borderColor: '#444' },
-  actionBtn: { backgroundColor: THEME.card, padding: 15, borderRadius: 8, borderWidth: 1, borderColor: THEME.gold, alignItems: 'center', width: '100%' },
-  actionBtnText: { color: THEME.gold, fontWeight: 'bold' },
-  ticketContainer: { flexDirection: 'row', justifyContent: 'space-between', width: '100%', backgroundColor: '#222', borderRadius: 10, padding: 15, marginBottom: 15, borderWidth: 1, borderColor: '#444' },
-  ticketColumn: { alignItems: 'center', flex: 1 },
-  ticketDivider: { width: 1, backgroundColor: '#444', height: '100%' },
-  ticketLabel: { color: '#888', fontSize: 10, fontWeight: 'bold', marginBottom: 5 },
-  ticketNumber: { color: THEME.gold, fontSize: 32, fontWeight: 'bold' },
-  ownerName: { color: '#fff', fontSize: 24, fontWeight: 'bold', marginBottom: 5 },
-  ownerNote: { color: '#aaa', fontSize: 14, fontStyle: 'italic', marginBottom: 15 },
-  inputLabel: { color: '#888', fontSize: 10, marginBottom: 4, textTransform: 'uppercase', fontWeight: 'bold' }
+  qTab: {
+    flex: 1, // Make them expand equally
+    paddingVertical: 8, // Increased padding
+    borderRadius: 8, // Changed from 20 for a more tab-like feel (optional, but looks better wide)
+    marginHorizontal: 2, // Reduced margin
+    backgroundColor: 'transparent',
+    borderWidth: 1,
+    borderColor: 'transparent',
+    alignItems: 'center', // Center text
+    justifyContent: 'center',
+  },
+  qTabActive: {
+    backgroundColor: THEME.colors.primary,
+    borderColor: THEME.colors.border,
+  },
+  qTabText: {
+    color: THEME.colors.textSecondary,
+    fontWeight: 'bold',
+    fontSize: 12, // Base size
+    textAlign: 'center',
+  },
+  qTabScoreText: { // New style for the score subtitle
+    color: THEME.colors.text.secondary,
+    fontSize: 10,
+    marginTop: 2,
+    textAlign: 'center',
+  },
+  qTabTextActive: {
+    color: THEME.colors.text, 
+    fontWeight: 'bold',
+  },
+  qTabScoreTextActive: { // Active score text
+    color: THEME.colors.text,
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginTop: 2,
+  },
+
+  // --- Board Layout ---
+  centeredView: {
+    flex: 1,
+    alignItems: 'center', 
+    backgroundColor: THEME.colors.background,
+  },
+  boardConstrainer: {
+    flex: 1,
+    width: '100%',
+    maxWidth: 500, 
+    paddingBottom: 20, 
+  },
+  
+  // -- NEW: Explicit Header Labels --
+  // Top Label: Looks good, keeping as is
+  topTeamLabel: {
+    fontWeight: 'bold',
+    fontSize: 14, 
+    marginBottom: 5,
+    textAlign: 'center',
+    paddingVertical: 5,
+    backgroundColor: 'rgba(0,0,0,0.2)', 
+    borderRadius: 4,
+    alignSelf: 'center', 
+    paddingHorizontal: 100, 
+    maxWidth: '90%', 
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  
+  // Left Label Container
+  leftLabelContainer: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    width: 40, 
+    marginRight: 5, 
+    zIndex: 10, 
+    overflow: 'visible', 
+  },
+  
+  // Left Team Label
+  teamLabelLeft: {
+    fontWeight: 'bold',
+    fontSize: 14, 
+    textAlign: 'center',
+    transform: [{ rotate: '-90deg' }],
+    width: 180, 
+    position: 'absolute', 
+    left: -70, 
+    backgroundColor: 'rgba(0,0,0,0.2)', 
+    borderRadius: 4,
+    paddingVertical: 5, 
+    paddingHorizontal: 100,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+
+  // --- Modal / Details Card ---
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  detailCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: THEME.colors.card,
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    shadowColor: THEME.colors.shadow.shadowColor,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.5,
+    shadowRadius: 8,
+    elevation: 10,
+  },
+  detailTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: THEME.text,
+    textAlign: 'center',
+    marginBottom: 15,
+  },
+  
+  // Ticket / Square Info
+  ticketContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#e0e0e0', // Ticket color
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 15,
+  },
+  ticketColumn: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  ticketDivider: {
+    width: 1,
+    backgroundColor: '#999',
+    marginHorizontal: 10,
+  },
+  ticketLabel: {
+    color: '#555',
+    fontSize: 10,
+    fontWeight: 'bold',
+    marginBottom: 2,
+  },
+  ticketNumber: {
+    color: '#000',
+    fontSize: 24,
+    fontWeight: 'bold',
+  },
+  ownerName: {
+    color: THEME.colors.secondary,
+    fontSize: 22,
+    fontWeight: 'bold',
+    textAlign: 'center',
+    marginBottom: 5,
+  },
+  ownerNote: {
+    color: '#888',
+    fontSize: 14,
+    textAlign: 'center',
+    fontStyle: 'italic',
+    marginBottom: 15,
+  },
+  modalInput: {
+    backgroundColor: THEME.colors.card,
+    color: THEME.colors.text,
+    padding: 12,
+    borderRadius: 6,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: THEME.colors.border,
+    fontSize: 16,
+  },
+  
+  // Admin Section Headers
+  sectionHeader: {
+    color: THEME.colors.secondary, // Section headers pop
+    fontSize: 14,
+    fontWeight: 'bold',
+    textTransform: 'uppercase',
+    marginTop: 10,
+    marginBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.colors.border,
+    paddingBottom: 5,
+  },
+  inputLabel: {
+    color: THEME.colors.primary,
+    fontSize: 12,
+    marginBottom: 4,
+    marginLeft: 2,
+  },
+  scoreRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 10,
+  },
+  scoreLabel: {
+    color: THEME.colors.text,
+    width: 60,
+    fontWeight: 'bold',
+  },
+  smallScoreInput: {
+    backgroundColor: '#333',
+    color: '#fff',
+    width: 60,
+    padding: 8,
+    borderRadius: 4,
+    textAlign: 'center',
+    fontWeight: 'bold',
+  },
+  actionBtn: {
+    padding: 12,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#444',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.05)',
+  },
+  actionBtnText: {
+    color: THEME.text,
+    fontWeight: 'bold',
+  },
+  
+  // FABs
+  fabRight: {
+    position: 'absolute',
+    bottom: 30,
+    right: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: THEME.secondary, // Assuming secondary is a good action color
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
+  fabAbove: {
+    position: 'absolute',
+    bottom: 90, // Positioned above the share FAB
+    right: 20,
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#333',
+    justifyContent: 'center',
+    alignItems: 'center',
+    elevation: 5,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
 });

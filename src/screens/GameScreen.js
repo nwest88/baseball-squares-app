@@ -1,16 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { View, Text, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator, Share, Platform, useWindowDimensions } from 'react-native';
-import { doc, onSnapshot, setDoc, updateDoc } from 'firebase/firestore';
+import { View, Text, SafeAreaView, TouchableOpacity, Modal, TextInput, Button, Alert, ScrollView, ActivityIndicator, Share, Platform, useWindowDimensions, FlatList, Switch, KeyboardAvoidingView, StyleSheet, Image } from 'react-native';
+import { doc, onSnapshot, setDoc, updateDoc, deleteField } from 'firebase/firestore';
 import { signInWithEmailAndPassword, onAuthStateChanged, signOut } from 'firebase/auth';
 
 import { Ionicons } from '@expo/vector-icons'; 
 import { db, auth } from '../../firebaseConfig'; 
 import GridBoard from '../components/GridBoard'; 
+import GamePoolCard from '../components/GamePoolCard';
+// BrandHeader removed for compact layout
+import ImportReviewModal from '../components/ImportReviewModal';
+
+// Styles & Theme
 import { styles } from '../styles/GameScreen.styles'; 
-import { THEME } from '../theme/index.js';
-import BrandHeader from '../components/BrandHeader';
-// 1. IMPORT STORAGE UTILS
+import { styles as playerStyles } from '../styles/PlayerManager.styles'; 
+import { THEME } from '../theme/index';
+
+// Utils
 import { toggleFollowGame, isGameFollowed } from '../utils/storage';
+import { deletePlayerFromGrid, updatePlayerAllocation } from '../utils/gameFunctions';
+import { pickAndProcessImage } from '../services/ImageImportService';
 
 const DEFAULT_SCORES = {
   q1: { top: '', left: '' },
@@ -24,25 +32,36 @@ export default function GameScreen({ route, navigation }) {
   const { width } = useWindowDimensions(); 
   const isWide = width > 768; 
   
+  // --- CORE STATE ---
   const [gridData, setGridData] = useState({});
   const [user, setUser] = useState(null);
-  const [activeQuarter, setActiveQuarter] = useState('q1');
-  const [scores, setScores] = useState(DEFAULT_SCORES);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(""); 
-  
-  // FOLLOW STATE
-  const [isFollowing, setIsFollowing] = useState(false); // <--- NEW STATE
+  const [isFollowing, setIsFollowing] = useState(false);
 
-  // ... (Keep existing states: Modals, Edit, Admin) ...
+  // --- TAB STATE ---
+  const [activeTab, setActiveTab] = useState('squares'); // 'info' | 'squares' | 'players'
+  const [activeQuarter, setActiveQuarter] = useState('q1'); // Sub-tab for 'squares'
+
+  // --- HIGHLIGHT STATE (Array) ---
+  const [highlightedPlayers, setHighlightedPlayers] = useState([]);
+
+  // --- SCORES STATE ---
+  const [scores, setScores] = useState(DEFAULT_SCORES);
+
+  // --- MODAL STATES ---
   const [showAdminModal, setShowAdminModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  
+  // --- SQUARE EDITING STATE ---
   const [selectedDetails, setSelectedDetails] = useState(null);
   const [editingSquare, setEditingSquare] = useState(null); 
   const [editName, setEditName] = useState("");
   const [editEmail, setEditEmail] = useState("");
   const [editNote, setEditNote] = useState("");
+
+  // --- ADMIN SETTINGS STATE ---
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [settingsName, setSettingsName] = useState("");
@@ -51,10 +70,30 @@ export default function GameScreen({ route, navigation }) {
   const [settingsLeft, setSettingsLeft] = useState("");
   const [settingsPrice, setSettingsPrice] = useState(""); 
   const [settingsCut, setSettingsCut] = useState("");     
-  const [settingsPublic, setSettingsPublic] = useState(true); 
+  const [settingsPublic, setSettingsPublic] = useState(true);
+  
+  // --- LOCK STATE REMOVED --- 
 
+  // --- PLAYER MANAGER STATE ---
+  const [pmName, setPmName] = useState("");
+  const [pmCount, setPmCount] = useState("");
+  const [pmNote, setPmNote] = useState("");
+  const [selectedPlayer, setSelectedPlayer] = useState(null); // For Player Edit Modal
+  const [showPlayerEditModal, setShowPlayerEditModal] = useState(false);
+  const [playerEditNote, setPlayerEditNote] = useState("");
+  const [playerEditCount, setPlayerEditCount] = useState(""); 
+  const [isReshuffle, setIsReshuffle] = useState(false); 
+  
+  // --- AI IMPORT STATE ---
+  const [importModalVisible, setImportModalVisible] = useState(false);
+  const [isImporting, setIsImporting] = useState(false);
+  const [scannedPlayers, setScannedPlayers] = useState([]);
+
+
+  // ===============================================================
+  // 1. INITIALIZATION & DATA FETCHING
+  // ===============================================================
   useEffect(() => {
-    // 2. CHECK FOLLOW STATUS ON LOAD
     const checkFollow = async () => {
         const following = await isGameFollowed(gameId);
         setIsFollowing(following);
@@ -75,6 +114,8 @@ export default function GameScreen({ route, navigation }) {
             }));
         }
 
+        // Only sync settings if we aren't editing them right now
+        // NOTE: We sync these to state so the Admin Info tab is populated
         if (!showAdminModal) {
             setSettingsName(data.name || "");
             setSettingsHost(data.hostName || ""); 
@@ -99,31 +140,113 @@ export default function GameScreen({ route, navigation }) {
     return () => { unsubDocs(); unsubAuth(); };
   }, [gameId, showAdminModal]); 
 
-  // --- ACTIONS ---
+  // Check Admin Status
+  const isAdmin = user && gridData.adminId && user.uid === gridData.adminId;
+
+
+  // ===============================================================
+  // 2. HELPER FUNCTIONS
+  // ===============================================================
+
+  const getTeamColor = (name) => {
+    if (!name) return '#555';
+    const n = name.toLowerCase();
+    if (n.includes('chief') || n.includes('49') || n.includes('bucs')) return THEME.red;
+    if (n.includes('eagle') || n.includes('pack') || n.includes('jet')) return THEME.green;
+    return '#444';
+  };
+
+  // --- WINNER CALCULATION ---
+  const getWinningCoords = (quarterKey) => {
+    if (!gridData.topAxis || !gridData.leftAxis) return null;
+    const currentScores = scores[quarterKey];
+    if (!currentScores || (currentScores.top === '' && currentScores.left === '')) return null;
+    
+    const tVal = currentScores.top === '' ? '0' : currentScores.top;
+    const lVal = currentScores.left === '' ? '0' : currentScores.left;
+    const tDigit = parseInt(tVal.toString().slice(-1));
+    const lDigit = parseInt(lVal.toString().slice(-1));
+    
+    if (isNaN(tDigit) || isNaN(lDigit)) return null;
+    const colIndex = gridData.topAxis.indexOf(tDigit);
+    const rowIndex = gridData.leftAxis.indexOf(lDigit);
+    return (colIndex === -1 || rowIndex === -1) ? null : { row: rowIndex, col: colIndex };
+  };
+
+  const winningLoc = getWinningCoords(activeQuarter); 
+
+  // --- PLAYER STATS ---
+  const getBoardStats = () => {
+    const cols = gridData.gridCols || 10;
+    const rows = gridData.gridRows || 10;
+    const totalSquares = cols * rows;
+    let takenCount = 0;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (gridData[`${r}-${c}`]) takenCount++;
+      }
+    }
+    return {
+      total: totalSquares,
+      taken: takenCount,
+      remaining: totalSquares - takenCount,
+      isFull: takenCount >= totalSquares
+    };
+  };
+
+  const getPlayerStats = () => {
+    const playerMap = {};
+    const cols = gridData.gridCols || 10;
+    const rows = gridData.gridRows || 10;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const cell = gridData[`${r}-${c}`];
+        if (cell) {
+          const playerName = (typeof cell === 'object') ? cell.name : cell;
+          const playerNote = (typeof cell === 'object') ? cell.note : "";
+          if (playerName) {
+             if (!playerMap[playerName]) playerMap[playerName] = { count: 0, note: playerNote };
+             playerMap[playerName].count++;
+          }
+        }
+      }
+    }
+    return Object.keys(playerMap)
+        .map(name => ({ name, count: playerMap[name].count, note: playerMap[name].note }))
+        .sort((a, b) => b.count - a.count);
+  };
+
+
+  // ===============================================================
+  // 3. ACTION HANDLERS
+  // ===============================================================
+
+  // --- Highlight Toggle Logic ---
+  const togglePlayerHighlight = (playerName) => {
+    setHighlightedPlayers(prev => {
+        if (prev.includes(playerName)) {
+            return prev.filter(p => p !== playerName);
+        } else {
+            return [...prev, playerName];
+        }
+    });
+  };
+
 
   const handleToggleFollow = async () => {
       const newState = await toggleFollowGame(gameId);
       setIsFollowing(newState);
-      if (newState) {
-          Alert.alert("Followed!", "This pool is now saved to your dashboard.");
-      } else {
-          Alert.alert("Unfollowed", "Removed from your dashboard.");
-      }
+      if (newState) Alert.alert("Followed!", "Saved to dashboard.");
+      else Alert.alert("Unfollowed", "Removed from dashboard.");
   };
 
   const handleShare = async () => {
-    const url = `https://baseball-squares-mvp.web.app/game/${gameId}`;
-    const message = `Join my Squares Pool!\nGame ID: ${gameId}\n\nPlay here: ${url}`;
-    try {
-      await Share.share({ message, url, title: 'Squares Pool Invite' });
-    } catch (error) { Alert.alert(error.message); }
+    const url = `https://quiksquares.app/game/${gameId}`;
+    try { await Share.share({ message: `Join my Squares Pool!\nGame ID: ${gameId}\n\nPlay here: ${url}`, url, title: 'Squares Pool Invite' }); } catch (error) {}
   };
 
   const handleSquarePress = (data) => {
-    const isAdmin = user?.uid === gridData.adminId;
-
     if (data.owner) {
-        // ... (Keep existing View Details Logic) ...
         const topNum = gridData.topAxis ? gridData.topAxis[data.col] : '?';
         const leftNum = gridData.leftAxis ? gridData.leftAxis[data.row] : '?';
         const ownerName = (typeof data.owner === 'object') ? data.owner.name : data.owner;
@@ -138,154 +261,437 @@ export default function GameScreen({ route, navigation }) {
         setShowDetailsModal(true);
         return;
     }
-
     if (!isAdmin && !isFollowing) {
-        Alert.alert("👀 Watcher Mode", "Please click the 'Follow' button (⭐) to join this pool and pick squares.");
+        Alert.alert("👀 Watcher Mode", "Please 'Follow' (⭐) to pick squares.");
         return;
     }
-
     const mode = gridData.assignmentMode || 'manual'; 
-    if (mode === 'manual') {
-        openEditModal(data.row, data.col);
-    } else {
-        Alert.alert("Auto Mode", "Use the 'People' button to randomly assign squares.");
-    }
+    if (mode === 'manual') openEditModal(data.row, data.col);
+    else Alert.alert("Auto Mode", "Use the 'Players' tab to assign squares.");
   };
 
-  // ... (Keep ALL other helper functions exactly as they were: openEditModal, saveSquareInfo, handleRandomizeNumbers, handleClearNumbers, handleUpdateSettings, handleSaveScores, updateScoreInput, getWinningCoords, getTeamColor, handleLogin) ...
+  // --- PLAYER MANAGEMENT HANDLERS ---
+  const handleAutoAssign = async () => {
+    const stats = getBoardStats();
+    if (!isAdmin || stats.isFull) return;
+    if (!pmName.trim()) { Alert.alert("Error", "Name required"); return; }
+    const numSquares = parseInt(pmCount);
+    if (isNaN(numSquares) || numSquares < 1) { Alert.alert("Error", "Invalid number"); return; }
+    if (numSquares > stats.remaining) { Alert.alert("No Room", `Only ${stats.remaining} squares available.`); return; }
+
+    const emptyKeys = [];
+    const cols = gridData.gridCols || 10;
+    const rows = gridData.gridRows || 10;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const key = `${r}-${c}`;
+        if (!gridData[key]) emptyKeys.push(key);
+      }
+    }
+    const shuffled = emptyKeys.sort(() => 0.5 - Math.random());
+    const selected = shuffled.slice(0, numSquares);
+    const updateObj = {};
+    const playerData = { name: pmName, email: "", note: pmNote }; 
+    selected.forEach(key => updateObj[key] = playerData);
+    try { await updateDoc(doc(db, "squares_pool", gameId), updateObj); setPmName(""); setPmCount(""); setPmNote(""); } catch (e) { Alert.alert("Error", e.message); }
+  };
+
+  const openPlayerEditModal = (player) => {
+      if (!isAdmin) return;
+      setSelectedPlayer(player);
+      setPlayerEditNote(player.note || "");
+      setPlayerEditCount(player.count.toString()); 
+      setIsReshuffle(false); 
+      setShowPlayerEditModal(true);
+  };
+
+  const handleSavePlayerChanges = async () => {
+    if (!selectedPlayer) return;
+    try {
+        const playerObj = { name: selectedPlayer.name, count: selectedPlayer.count, note: playerEditNote, email: "" };
+        await updatePlayerAllocation(db, gameId, gridData, playerObj, playerEditCount, isReshuffle);
+        if (!isReshuffle) {
+           const cols = gridData.gridCols || 10;
+           const rows = gridData.gridRows || 10;
+           const updates = {};
+           for (let r = 0; r < rows; r++) {
+              for (let c = 0; c < cols; c++) {
+                const key = `${r}-${c}`;
+                const cell = gridData[key];
+                if (cell) {
+                   const cellName = (typeof cell === 'object') ? cell.name : cell;
+                   if (cellName === selectedPlayer.name) {
+                       const currentData = (typeof cell === 'object') ? cell : { name: cell, email: "" };
+                       if (currentData.note !== playerEditNote) updates[key] = { ...currentData, note: playerEditNote };
+                   }
+                }
+              }
+           }
+           if (Object.keys(updates).length > 0) await updateDoc(doc(db, "squares_pool", gameId), updates);
+        }
+        setShowPlayerEditModal(false);
+    } catch (e) { Alert.alert("Update Failed", e.message); }
+  };
+
+  const handleDeletePlayer = async () => {
+      try {
+          await deletePlayerFromGrid(db, gameId, gridData, selectedPlayer.name);
+          setShowPlayerEditModal(false);
+      } catch (e) { Alert.alert("Error", e.message); }
+  };
+
+  // --- AI IMPORT HANDLERS ---
+  const startImport = async () => {
+    if (!isAdmin) return;
+    setImportModalVisible(true);
+    setIsImporting(true);
+    setScannedPlayers([]);
+    try {
+      const data = await pickAndProcessImage();
+      if (data) setScannedPlayers(data); else setImportModalVisible(false);
+    } catch (error) { Alert.alert("Import Failed", "Try again."); setImportModalVisible(false); } finally { setIsImporting(false); }
+  };
+
+  const confirmImport = async () => {
+      const cols = gridData.gridCols || 10;
+      const rows = gridData.gridRows || 10;
+      const emptyKeys = [];
+      for (let r = 0; r < rows; r++) { for (let c = 0; c < cols; c++) { if (!gridData[`${r}-${c}`]) emptyKeys.push(`${r}-${c}`); } }
+      const shuffledAvailable = emptyKeys.sort(() => 0.5 - Math.random());
+      let currentIndex = 0;
+      const updateObj = {};
+      for (const player of scannedPlayers) {
+        const needed = parseInt(player.count) || 1;
+        if (currentIndex + needed > shuffledAvailable.length) break;
+        const keysToAssign = shuffledAvailable.slice(currentIndex, currentIndex + needed);
+        keysToAssign.forEach(key => updateObj[key] = { name: player.name, email: "", note: "Imported via AI" });
+        currentIndex += needed;
+      }
+      if (Object.keys(updateObj).length > 0) await updateDoc(doc(db, "squares_pool", gameId), updateObj);
+      setImportModalVisible(false);
+  };
+
+
+  // --- GENERIC SETTINGS HANDLERS ---
+  const handleLogin = async () => { try { await signInWithEmailAndPassword(auth, email, password); setEmail(""); setPassword(""); } catch (e) { Alert.alert("Error", e.message); } };
+  const handleUpdateSettings = async () => { try { await updateDoc(doc(db, "squares_pool", gameId), { name: settingsName, hostName: settingsHost, topTeam: settingsTop, leftTeam: settingsLeft, pricePerSquare: Number(settingsPrice) || 0, hostCut: settingsCut, isPublic: settingsPublic }); Alert.alert("Success", "Settings updated!"); } catch (e) { Alert.alert("Error", e.message); } };
+  const handleSaveScores = async () => { try { await setDoc(doc(db, "squares_pool", gameId), { scores: scores }, { merge: true }); Alert.alert("Success", "Scores Updated"); } catch (e) { Alert.alert("Save Failed", e.message); } };
+  const updateScoreInput = (q, team, val) => { setScores(prev => ({ ...prev, [q]: { ...(prev[q] || {}), [team]: val } })); };
+  
+  const handleClearNumbers = async () => {
+      // Logic to clear numbers
+      const doClear = async () => {
+          try { 
+              await updateDoc(doc(db, "squares_pool", gameId), { topAxis: Array(10).fill("?"), leftAxis: Array(10).fill("?") }); 
+              if (Platform.OS === 'web') {
+                  window.alert("Success: Numbers Cleared!");
+              } else {
+                  Alert.alert("Success", "Numbers Cleared!"); 
+              }
+          } catch (e) { 
+              if (Platform.OS === 'web') {
+                  window.alert("Error: " + e.message);
+              } else {
+                  Alert.alert("Error", e.message); 
+              }
+          }
+      };
+
+      if (Platform.OS === 'web') {
+          if (window.confirm("Clear Axis Numbers?\n\nThis will reset all row and column headers to '?'")) {
+              doClear();
+          }
+      } else {
+          Alert.alert(
+              "Clear Axis Numbers?", 
+              "This will reset all row and column headers to '?'", 
+              [
+                  { text: "Cancel", style: "cancel" }, 
+                  { text: "Clear", style: "destructive", onPress: doClear }
+              ]
+          );
+      }
+  };
+  
+  const handleRandomizeNumbers = async () => { 
+      // Logic to randomize numbers
+      const doRandomize = async () => {
+          const gen = (s) => Array.from({length:s},(_,i)=>i).sort(()=>Math.random()-0.5); 
+          try { 
+              await updateDoc(doc(db, "squares_pool", gameId), { topAxis: gen(10), leftAxis: gen(10) }); 
+              if (Platform.OS === 'web') {
+                  window.alert("Success: Numbers Randomized!");
+              } else {
+                  Alert.alert("Success", "Numbers Randomized!"); 
+              }
+          } catch (e) { 
+              if (Platform.OS === 'web') {
+                  window.alert("Error: " + e.message);
+              } else {
+                  Alert.alert("Error", e.message); 
+              }
+          } 
+      };
+
+      if (Platform.OS === 'web') {
+          if (window.confirm("Randomize Axis Numbers?\n\nAre you sure? If you have already shared this game or it is currently live, changing the numbers will disrupt the game for everyone.")) {
+              doRandomize();
+          }
+      } else {
+          Alert.alert(
+              "Randomize Axis Numbers?",
+              "Are you sure? If you have already shared this game or it is currently live, changing the numbers will disrupt the game for everyone.",
+              [
+                  { text: "Cancel", style: "cancel" },
+                  { text: "Randomize", style: "destructive", onPress: doRandomize }
+              ]
+          );
+      }
+  };
+  
   const openEditModal = (row, col, existingData = null) => {
     setEditingSquare({ row, col });
-    if (existingData) {
-        setEditName(existingData.name || "");
-        setEditEmail(existingData.email || "");
-        setEditNote(existingData.note || "");
-    } else {
-        setEditName(""); setEditEmail(""); setEditNote("");
-    }
-    setShowDetailsModal(false); 
-    setShowEditModal(true);     
+    if (existingData) { setEditName(existingData.name || ""); setEditEmail(existingData.email || ""); setEditNote(existingData.note || ""); } 
+    else { setEditName(""); setEditEmail(""); setEditNote(""); }
+    setShowDetailsModal(false); setShowEditModal(true);     
   };
-
   const saveSquareInfo = async () => {
     if (!editingSquare) return;
     const key = `${editingSquare.row}-${editingSquare.col}`;
-    const newOwnerData = { name: editName, email: editEmail, note: editNote };
-    const valueToSave = editName.trim() === "" ? null : newOwnerData;
-    try {
-        await setDoc(doc(db, "squares_pool", gameId), { [key]: valueToSave }, { merge: true });
-        setShowEditModal(false);
-    } catch (e) { Alert.alert("Error", "Could not save square."); }
+    const valueToSave = editName.trim() === "" ? null : { name: editName, email: editEmail, note: editNote };
+    try { await setDoc(doc(db, "squares_pool", gameId), { [key]: valueToSave }, { merge: true }); setShowEditModal(false); } catch (e) { Alert.alert("Error", "Could not save."); }
   };
 
-  const handleRandomizeNumbers = async () => {
-      const cols = gridData.gridCols || 10;
-      const rows = gridData.gridRows || 10;
-      const generateShuffled = (size) => {
-          const arr = Array.from({ length: size }, (_, i) => i);
-          return arr.sort(() => Math.random() - 0.5);
-      };
-      try {
-          await updateDoc(doc(db, "squares_pool", gameId), {
-              topAxis: generateShuffled(cols),
-              leftAxis: generateShuffled(rows)
-          });
-          Alert.alert("Success", "Numbers Randomized!");
-      } catch (e) { Alert.alert("Error", e.message); }
-  };
 
-  const handleClearNumbers = async () => {
-      const cols = gridData.gridCols || 10;
-      const rows = gridData.gridRows || 10;
-      try {
-          await updateDoc(doc(db, "squares_pool", gameId), {
-              topAxis: Array(cols).fill("?"),
-              leftAxis: Array(rows).fill("?")
-          });
-          Alert.alert("Success", "Numbers Cleared!");
-      } catch (e) { Alert.alert("Error", e.message); }
-  };
+  // ===============================================================
+  // 4. RENDERS
+  // ===============================================================
 
-  const handleUpdateSettings = async () => {
-      try {
-          await updateDoc(doc(db, "squares_pool", gameId), {
-              name: settingsName,
-              hostName: settingsHost, 
-              topTeam: settingsTop,
-              leftTeam: settingsLeft,
-              pricePerSquare: Number(settingsPrice) || 0, 
-              hostCut: settingsCut,   
-              isPublic: settingsPublic 
-          });
-          Alert.alert("Success", "Game settings updated!");
-      } catch (e) { Alert.alert("Error", e.message); }
-  };
+  if (loading || (!gridData.id && !loadError)) return <SafeAreaView style={[styles.container, {justifyContent:'center',alignItems:'center'}]}><ActivityIndicator size="large" color={THEME.primary} /></SafeAreaView>;
+  if (loadError) return <SafeAreaView style={styles.container}><Text style={{color:'red'}}>{loadError}</Text><Button title="Home" onPress={() => navigation.navigate('Home')} /></SafeAreaView>;
 
-  const handleSaveScores = async () => {
-    try {
-        await setDoc(doc(db, "squares_pool", gameId), { scores: scores }, { merge: true });
-        Alert.alert("Success", "Scores Updated");
-    } catch (e) { Alert.alert("Save Failed", e.message); }
-  };
+  const stats = getBoardStats();
+  const playerStats = getPlayerStats();
+  
+  const price = gridData.pricePerSquare || 0;
+  const pot = stats.taken * price;
+  const payouts = { q1: pot * 0.125, q2: pot * 0.25, q3: pot * 0.125, final: pot * 0.5 }; 
 
-  const updateScoreInput = (q, team, val) => {
-    setScores(prev => ({ ...prev, [q]: { ...(prev[q] || {}), [team]: val } }));
-  };
+  const renderInfoTab = () => {
+    // If ADMIN, show the Edit Panel instead of just read-only info
+    if (isAdmin) {
+        return (
+            <ScrollView style={{flex: 1, padding: 15}}>
+                 <Text style={styles.sectionHeader}>📋 Game Details (Admin)</Text>
+                 <View style={{marginBottom: 10}}><Text style={styles.inputLabel}>Pool Name</Text><TextInput style={styles.modalInput} value={settingsName} onChangeText={setSettingsName} placeholder="Name" placeholderTextColor="#666"/></View>
+                 <View style={{flexDirection:'row', justifyContent:'space-between', marginBottom: 10}}>
+                     <View style={{flex:1, marginRight:5}}><Text style={styles.inputLabel}>Away Team</Text><TextInput style={styles.modalInput} value={settingsTop} onChangeText={setSettingsTop} placeholder="Away" placeholderTextColor="#666"/></View>
+                     <View style={{flex:1, marginLeft:5}}><Text style={styles.inputLabel}>Home Team</Text><TextInput style={styles.modalInput} value={settingsLeft} onChangeText={setSettingsLeft} placeholder="Home" placeholderTextColor="#666"/></View>
+                 </View>
+                 <View style={{flexDirection:'row', justifyContent:'space-between', marginBottom: 10}}>
+                     <View style={{flex:1, marginRight:5}}><Text style={styles.inputLabel}>Price ($)</Text><TextInput style={styles.modalInput} value={settingsPrice} onChangeText={setSettingsPrice} placeholder="0" keyboardType="numeric" placeholderTextColor="#666"/></View>
+                     <View style={{flex:1, marginLeft:5}}><Text style={styles.inputLabel}>Host Cut %</Text><TextInput style={styles.modalInput} value={settingsCut} onChangeText={setSettingsCut} placeholder="0" placeholderTextColor="#666"/></View>
+                 </View>
+                 <Button title="Save Game Details" color={THEME.primary} onPress={handleUpdateSettings} />
 
-  const getWinningCoords = () => {
-    if (!gridData.topAxis || !gridData.leftAxis) return null;
-    const currentScores = scores[activeQuarter];
-    if (!currentScores || (currentScores.top === '' && currentScores.left === '')) return null;
-    const tVal = currentScores.top === '' ? '0' : currentScores.top;
-    const lVal = currentScores.left === '' ? '0' : currentScores.left;
-    const tDigit = parseInt(tVal.toString().slice(-1));
-    const lDigit = parseInt(lVal.toString().slice(-1));
-    if (isNaN(tDigit) || isNaN(lDigit)) return null;
-    const colIndex = gridData.topAxis.indexOf(tDigit);
-    const rowIndex = gridData.leftAxis.indexOf(lDigit);
-    return (colIndex === -1 || rowIndex === -1) ? null : { row: rowIndex, col: colIndex };
-  };
-  const winningLoc = getWinningCoords();
+                 <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
+                 
+                 <Text style={styles.sectionHeader}>🏈 Game Scores</Text>
+                 {['q1','q2','q3','final'].map(q => ( 
+                     <View key={q} style={styles.scoreRow}>
+                         <Text style={styles.scoreLabel}>{q.toUpperCase()}</Text>
+                         <TextInput value={(scores[q]?.top || '').toString()} onChangeText={(v) => updateScoreInput(q, 'top', v)} style={styles.smallScoreInput} keyboardType="numeric" placeholder="Away"/>
+                         <Text style={{color: '#666'}}>-</Text>
+                         <TextInput value={(scores[q]?.left || '').toString()} onChangeText={(v) => updateScoreInput(q, 'left', v)} style={styles.smallScoreInput} keyboardType="numeric" placeholder="Home"/>
+                     </View> 
+                 ))}
+                 <Button title="Update Scores" color={THEME.accent} onPress={handleSaveScores} />
 
-  const getTeamColor = (name) => {
-    if (!name) return '#555';
-    const n = name.toLowerCase();
-    if (n.includes('chief') || n.includes('49') || n.includes('bucs')) return THEME.red;
-    if (n.includes('eagle') || n.includes('pack') || n.includes('jet')) return THEME.green;
-    return '#444';
-  };
+                 <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
+                 
+                 <Text style={styles.sectionHeader}>⚙️ Grid Management</Text>
+                 
+                 <TouchableOpacity style={styles.actionBtn} onPress={handleRandomizeNumbers}>
+                    <Text style={styles.actionBtnText}>🎲 Randomize Axis Numbers</Text>
+                 </TouchableOpacity>
+                 <TouchableOpacity style={[styles.actionBtn, { marginTop: 10, borderColor: THEME.red }]} onPress={handleClearNumbers}>
+                    <Text style={[styles.actionBtnText, { color: THEME.red }]}>🚫 Clear Numbers</Text>
+                 </TouchableOpacity>
+                 
+                 <View style={{height: 50}}/>
+                 <Button title="Log Out" color="#666" onPress={() => signOut(auth)} />
+                 <View style={{height: 50}}/>
+            </ScrollView>
+        );
+    }
 
-  const handleLogin = async () => {
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-      setEmail(""); setPassword(""); 
-    } catch (e) { Alert.alert("Error", e.message); }
-  };
+    // --- READ ONLY VIEW (For Players) ---
+    const quarters = ['q1', 'q2', 'q3', 'final'];
+    const winners = quarters.map(q => {
+        const loc = getWinningCoords(q);
+        if (!loc) return { q, name: 'TBD' };
+        const cell = gridData[`${loc.row}-${loc.col}`];
+        const name = cell ? (typeof cell === 'object' ? cell.name : cell) : "OPEN";
+        return { q, name };
+    });
 
-  // ... (Keep existing Loading / Error Render) ...
-  if (loading || (!gridData.id && !loadError)) {
     return (
-        <SafeAreaView style={[styles.container, {justifyContent: 'center', alignItems: 'center'}]}>
-            <ActivityIndicator size="large" color={THEME.primary} />
-            <Text style={{color: '#666', marginTop: 10, fontSize: 16}}>Finding Pool...</Text>
-        </SafeAreaView>
+        <ScrollView style={{flex: 1, padding: 10}}>
+             <GamePoolCard data={{
+                 title: gridData.name || "Game Pool",
+                 host: gridData.hostName || "Host",
+                 teamA: gridData.topTeam || "AWAY",
+                 teamB: gridData.leftTeam || "HOME",
+                 squaresSold: stats.taken,
+                 totalSquares: stats.total,
+                 costPerSquare: price,
+                 totalPot: pot,
+                 payouts: payouts
+             }}/>
+             
+             <View style={[styles.detailCard, {marginTop: 20}]}>
+                 <Text style={styles.detailTitle}>🏆 Current Winners</Text>
+                 {winners.map(w => (
+                     <View key={w.q} style={{flexDirection:'row', justifyContent:'space-between', paddingVertical: 10, borderBottomWidth: 1, borderColor: '#333'}}>
+                         <Text style={{color: THEME.subtext, fontWeight:'bold'}}>{w.q.toUpperCase()}</Text>
+                         <Text style={{color: THEME.gold, fontWeight:'bold', fontSize: 16}}>{w.name}</Text>
+                     </View>
+                 ))}
+             </View>
+             
+             {/* LOGIN FOR ADMIN */}
+             {!user && (
+                 <View style={{marginTop: 30, padding: 15, borderTopWidth: 1, borderColor: '#333'}}>
+                     <Text style={{color: '#666', marginBottom: 10, textAlign: 'center'}}>Admin Login</Text>
+                     <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={[styles.modalInput, {marginBottom: 10}]} placeholderTextColor="#666" autoCapitalize="none"/>
+                     <TextInput placeholder="Password" value={password} onChangeText={setPassword} style={[styles.modalInput, {marginBottom: 10}]} secureTextEntry placeholderTextColor="#666"/>
+                     <Button title="Login" color={THEME.accent} onPress={handleLogin} />
+                 </View>
+             )}
+             
+             <View style={{height: 50}}/>
+        </ScrollView>
     );
-  }
+  };
 
-  if (loadError) {
-      return (
-        <SafeAreaView style={[styles.container, {justifyContent: 'center', alignItems: 'center', padding: 20}]}>
-            <Text style={{color: 'red', fontSize: 18, fontWeight: 'bold'}}>ERROR</Text>
-            <Text style={{color: '#fff', textAlign: 'center'}}>{loadError}</Text>
-            <Button title="Go Home" color="#666" onPress={() => navigation.navigate('Home')} />
-        </SafeAreaView>
-      );
-  }
+  const renderSquaresTab = () => (
+    <>
+      <View style={styles.tabBar}>
+        {['q1','q2','q3','final'].map(q => {
+          // --- UPDATED LOGIC TO SHOW SCORE IF EXISTS ---
+          const scoreData = scores[q];
+          const hasScore = scoreData && scoreData.top !== '' && scoreData.left !== '';
+          const scoreText = hasScore ? `${scoreData.top} - ${scoreData.left}` : null;
+          
+          return (
+            <TouchableOpacity key={q} style={[styles.qTab, activeQuarter === q && styles.qTabActive]} onPress={() => setActiveQuarter(q)}>
+              <Text style={[styles.qTabText, activeQuarter === q && styles.qTabTextActive]}>{q.toUpperCase()}</Text>
+              {hasScore && (
+                  <Text style={[styles.qTabScoreText, activeQuarter === q && styles.qTabScoreTextActive]}>
+                      {scoreText}
+                  </Text>
+              )}
+            </TouchableOpacity>
+          );
+        })}
+      </View>
+      <View style={styles.centeredView}>
+        <View style={[styles.boardConstrainer, isWide && { maxWidth: '100%', paddingHorizontal: 20 }]}>
+          <View style={{alignItems: 'center', paddingVertical: 10, paddingLeft: 80}}> 
+               <Text style={[styles.topTeamLabel, {color: getTeamColor(gridData.topTeam)}]}>{gridData.topTeam?.toUpperCase() || "AWAY"}</Text>
+          </View>
+          <View style={{flexDirection: 'row', flex: 1}}>
+               <View style={styles.leftLabelContainer}>
+                  <Text numberOfLines={1} style={[styles.teamLabelLeft, {color: getTeamColor(gridData.leftTeam)}]}>{gridData.leftTeam?.toUpperCase() || "HOME"}</Text>
+               </View>
+               <GridBoard 
+                  gridData={gridData}
+                  topAxis={gridData.topAxis}
+                  leftAxis={gridData.leftAxis}
+                  winningLoc={winningLoc}
+                  highlightedPlayers={highlightedPlayers} 
+                  onSquarePress={handleSquarePress} 
+                  isWide={isWide}
+               />
+          </View>
+        </View>
+      </View>
+    </>
+  );
+
+  const renderPlayersTab = () => (
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={{flex:1}}>
+        <View style={playerStyles.statsContainer}>
+             <View style={playerStyles.statsRow}>
+                 <Text style={playerStyles.statsLabel}>TOTAL TAKEN</Text>
+                 <Text style={[playerStyles.statsValue, stats.isFull && {color: THEME.accent}]}>{stats.taken} / {stats.total}</Text>
+             </View>
+             <View style={playerStyles.progressBarBg}>
+                <View style={[playerStyles.progressBarFill, { width: `${(stats.taken / stats.total) * 100}%` }]} />
+             </View>
+        </View>
+
+        {/* ADMIN FORM */}
+        {gridData.assignmentMode === 'auto' && isAdmin && (
+            <View style={[playerStyles.formCard, stats.isFull && {opacity: 0.5}]}>
+            <View style={playerStyles.row}>
+                <TextInput style={[playerStyles.input, {flex: 2}]} placeholder="Name" placeholderTextColor="#666" value={pmName} onChangeText={setPmName} editable={!stats.isFull}/>
+                <TextInput style={[playerStyles.input, {flex: 1, marginLeft: 10}]} placeholder="#" placeholderTextColor="#666" keyboardType="numeric" value={pmCount} onChangeText={setPmCount} editable={!stats.isFull}/>
+            </View>
+            <TouchableOpacity style={[playerStyles.addBtn, stats.isFull && playerStyles.disabledBtn]} onPress={handleAutoAssign} disabled={stats.isFull}>
+                <Text style={playerStyles.addBtnText}>{stats.isFull ? "FULL" : "Assign"}</Text>
+            </TouchableOpacity>
+            {!stats.isFull && (
+                <TouchableOpacity style={[playerStyles.addBtn, { backgroundColor: THEME.colors.secondary, marginTop: 8 }]} onPress={startImport}>
+                <Text style={playerStyles.addBtnText}>📷 Scan List</Text>
+                </TouchableOpacity>
+            )}
+            </View>
+        )}
+
+        {/* PLAYER LIST WITH TOGGLE */}
+        <FlatList 
+            data={playerStats}
+            keyExtractor={item => item.name}
+            contentContainerStyle={{paddingBottom: 100, paddingHorizontal: 15}}
+            renderItem={({item}) => (
+                <TouchableOpacity 
+                    style={[playerStyles.playerRow, {alignItems: 'center'}]}
+                    onPress={() => openPlayerEditModal(item)}
+                    disabled={!isAdmin}
+                >
+                    <View style={playerStyles.avatar}>
+                        <Text style={playerStyles.avatarText}>{item.name.substring(0,2).toUpperCase()}</Text>
+                    </View>
+                    <View style={{flex: 1}}>
+                        <Text style={playerStyles.playerName}>{item.name}</Text>
+                        <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                            <View style={playerStyles.badge}><Text style={playerStyles.badgeText}>{item.count}</Text></View>
+                            {item.note ? <Text style={[playerStyles.playerNote, {marginLeft: 5}]}>{item.note}</Text> : null}
+                        </View>
+                    </View>
+                    
+                    {/* HIGHLIGHT TOGGLE - Visible to all users */}
+                    <View style={{alignItems: 'center', marginLeft: 10}}>
+                        <Text style={{color: '#666', fontSize: 8, marginBottom: 2}}>SHOW</Text>
+                        <Switch 
+                            value={highlightedPlayers.includes(item.name)} 
+                            onValueChange={() => togglePlayerHighlight(item.name)}
+                            trackColor={{ false: "#333", true: THEME.primary }}
+                            thumbColor={highlightedPlayers.includes(item.name) ? "#FFF" : "#f4f3f4"}
+                        />
+                    </View>
+                </TouchableOpacity>
+            )}
+        />
+    </KeyboardAvoidingView>
+  );
 
   return (
     <SafeAreaView style={styles.container}>
-      <BrandHeader />
+      {/* BrandHeader REMOVED */}
       
-      {/* ... (Keep existing Scoreboard and Tabs) ... */}
+      {/* SCOREBOARD HEADER */}
       <View style={styles.scoreboard}>
         <TouchableOpacity onPress={() => navigation.canGoBack() ? navigation.goBack() : navigation.navigate('Home')} style={{paddingRight: 15}}>
           <Text style={{color: '#666', fontSize: 18}}>‹</Text>
@@ -301,94 +707,64 @@ export default function GameScreen({ route, navigation }) {
               <Text style={styles.bigScore}>{scores[activeQuarter]?.top || "-"}</Text>
            </View>
         </View>
-        <View style={{width: 30}} />
-      </View>
-
-      <View style={styles.tabBar}>
-        {['q1','q2','q3','final'].map(q => (
-          <TouchableOpacity key={q} style={[styles.qTab, activeQuarter === q && styles.qTabActive]} onPress={() => setActiveQuarter(q)}>
-            <Text style={[styles.qTabText, activeQuarter === q && styles.qTabTextActive]}>{q.toUpperCase()}</Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-
-      <View style={styles.centeredView}>
-        <View style={[styles.boardConstrainer, isWide && { maxWidth: '100%', paddingHorizontal: 20 }]}>
-          <View style={{alignItems: 'center', paddingVertical: 10, paddingLeft: 80}}> 
-               <Text style={[styles.axisLabel, {color: getTeamColor(gridData.topTeam)}]}>
-                   {gridData.topTeam?.toUpperCase() || "AWAY"}
-               </Text>
-          </View>
-          <View style={{flexDirection: 'row', flex: 1}}>
-               <View style={styles.leftLabelContainer}>
-                  <Text numberOfLines={1} style={[styles.teamLabelLeft, {color: getTeamColor(gridData.leftTeam)}]}>
-                      {gridData.leftTeam?.toUpperCase() || "HOME"}
-                  </Text>
-               </View>
-               <GridBoard 
-                  gridData={gridData}
-                  topAxis={gridData.topAxis}
-                  leftAxis={gridData.leftAxis}
-                  winningLoc={winningLoc}
-                  onSquarePress={handleSquarePress} 
-                  isWide={isWide}
-               />
-          </View>
+        
+        {/* LOGO on Right */}
+        <View style={{marginLeft: 15}}>
+            <Image source={require('../../assets/logo.png')} style={{width: 40, height: 40, resizeMode: 'contain'}} />
         </View>
       </View>
 
-      {/* FABs */}
-      
-      {/* NEW: FOLLOW BUTTON (Above Share) - Shows Star/Heart */}
-      <TouchableOpacity 
-        style={[styles.fabAbove, {backgroundColor: isFollowing ? THEME.primary : THEME.card}]} 
-        onPress={handleToggleFollow}
-      >
-        <Ionicons 
-            name={isFollowing ? "star" : "star-outline"} 
-            size={24} 
-            color={isFollowing ? "#FFF" : THEME.primary} 
-        />
-      </TouchableOpacity>
+      {/* MAIN TABS */}
+      <View style={{flexDirection: 'row', backgroundColor: THEME.colors.background, borderBottomWidth: 1, borderColor: THEME.colors.border}}>
+         {['Info', 'Squares', 'Players'].map(t => {
+             const key = t.toLowerCase();
+             const isActive = activeTab === key;
+             return (
+                 <TouchableOpacity 
+                    key={key} 
+                    style={{flex: 1, paddingVertical: 12, borderBottomWidth: 3, borderColor: isActive ? THEME.colors.card : 'transparent'}}
+                    onPress={() => setActiveTab(key)}
+                 >
+                     <Text style={{color: isActive ? THEME.colors.text.primary : THEME.colors.text.inverse, textAlign: 'center', fontWeight: 'bold'}}>{t}</Text>
+                 </TouchableOpacity>
+             );
+         })}
+      </View>
 
+      {/* MAIN CONTENT AREA */}
+      <View style={{flex: 1}}>
+        {activeTab === 'info' && renderInfoTab()}
+        {activeTab === 'squares' && renderSquaresTab()}
+        {activeTab === 'players' && renderPlayersTab()}
+      </View>
+
+      {/* FLOATING ACTION BUTTONS */}
+      {/* Admin FAB removed since controls are now in Info tab, keeping share/follow */}
+      
       <TouchableOpacity style={styles.fabRight} onPress={handleShare}>
         <Text style={{fontSize: 20}}>📤</Text>
       </TouchableOpacity>
-
-      {/* Admin Settings (Top of Stack) */}
-      {user?.uid === gridData.adminId && (
-        <TouchableOpacity 
-            style={[styles.fabAbove, {bottom: 160}]} // Push higher since Follow is now at 95
-            onPress={() => setShowAdminModal(true)}
-        >
-            <Text style={{fontSize: 20}}>⚙️</Text>
-        </TouchableOpacity>
-      )}
-
-      <TouchableOpacity style={styles.fabLeft} onPress={() => navigation.navigate('PlayerManager', { gameId: gameId })}>
-        <Text style={{fontSize: 20}}>👥</Text>
+      
+      <TouchableOpacity style={[styles.fabAbove, {backgroundColor: isFollowing ? THEME.colors.primary : THEME.colors.card}]} onPress={handleToggleFollow}>
+        <Ionicons name={isFollowing ? "star" : "star-outline"} size={24} color={isFollowing ? THEME.colors.card : THEME.colors.primary} />
       </TouchableOpacity>
 
-      {/* ... (Keep existing MODALS: ShowDetails, ShowEdit, ShowAdmin) ... */}
+
+      {/* --- MODALS (Admin Modal removed - functionality moved to Info Tab) --- */}
+      {/* 1. SQUARE DETAILS */}
       <Modal visible={showDetailsModal} transparent={true} animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowDetailsModal(false)}>
             <View style={styles.detailCard}>
                  <Text style={styles.detailTitle}>Square Details</Text>
                  <View style={styles.ticketContainer}>
-                    <View style={styles.ticketColumn}>
-                        <Text style={styles.ticketLabel}>AWAY</Text>
-                        <Text style={styles.ticketNumber}>{selectedDetails?.topNum}</Text>
-                    </View>
+                    <View style={styles.ticketColumn}><Text style={styles.ticketLabel}>AWAY</Text><Text style={styles.ticketNumber}>{selectedDetails?.topNum}</Text></View>
                     <View style={styles.ticketDivider} />
-                    <View style={styles.ticketColumn}>
-                        <Text style={styles.ticketLabel}>HOME</Text>
-                        <Text style={styles.ticketNumber}>{selectedDetails?.leftNum}</Text>
-                    </View>
+                    <View style={styles.ticketColumn}><Text style={styles.ticketLabel}>HOME</Text><Text style={styles.ticketNumber}>{selectedDetails?.leftNum}</Text></View>
                  </View>
                  <Text style={styles.ownerName}>{selectedDetails?.name}</Text>
                  <Text style={styles.ownerNote}>{selectedDetails?.note || "No notes"}</Text>
                  <View style={{height: 20}} />
-                 {gridData.assignmentMode === 'manual' && (
+                 {gridData.assignmentMode === 'manual' && isAdmin && (
                      <Button title="Edit Square" color={THEME.accent} onPress={() => openEditModal(selectedDetails.row, selectedDetails.col, selectedDetails)} />
                  )}
                  <View style={{height: 10}} /><Button title="Close" color="#666" onPress={() => setShowDetailsModal(false)} />
@@ -396,6 +772,7 @@ export default function GameScreen({ route, navigation }) {
         </TouchableOpacity>
       </Modal>
 
+      {/* 2. EDIT SQUARE MANUAL */}
       <Modal visible={showEditModal} transparent={true} animationType="slide">
         <View style={styles.modalOverlay}>
             <View style={styles.detailCard}>
@@ -409,79 +786,32 @@ export default function GameScreen({ route, navigation }) {
         </View>
       </Modal>
 
-      <Modal visible={showAdminModal} animationType="slide" transparent={true}>
-        <View style={styles.modalOverlay}>
-          <View style={[styles.detailCard, isWide && { width: '60%', maxWidth: 800 }]}>
-            <Text style={styles.detailTitle}>Admin Controls</Text>
-            {!user ? (
-               <View style={{width: '100%'}}>
-                 <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={styles.modalInput} placeholderTextColor="#666" autoCapitalize="none"/>
-                 <TextInput placeholder="Password" value={password} onChangeText={setPassword} style={styles.modalInput} secureTextEntry placeholderTextColor="#666"/>
-                 <Button title="Login" color={THEME.accent} onPress={handleLogin} />
-                 <View style={{marginTop: 15}}><Button title="Close" color="#666" onPress={() => setShowAdminModal(false)} /></View>
-               </View>
-            ) : (
-              <ScrollView style={{width: '100%'}} showsVerticalScrollIndicator={false}>
-                 <Text style={styles.sectionHeader}>Game Settings</Text>
-                 <View style={isWide ? {flexDirection: 'row'} : {}}>
-                    <View style={isWide ? {flex: 1, marginRight: 10} : {}}>
-                        <Text style={styles.inputLabel}>Pool Name</Text>
-                        <TextInput style={styles.modalInput} value={settingsName} onChangeText={setSettingsName} placeholder="Pool Name" placeholderTextColor="#666" />
-                    </View>
-                    <View style={isWide ? {flex: 1} : {}}>
-                        <Text style={styles.inputLabel}>Host / Organization</Text>
-                        <TextInput style={styles.modalInput} value={settingsHost} onChangeText={setSettingsHost} placeholder="e.g. LBC 12U" placeholderTextColor="#666" />
-                    </View>
+      {/* 3. EDIT PLAYER (ADMIN) */}
+      <Modal visible={showPlayerEditModal} transparent={true} animationType="slide">
+         <View style={styles.modalOverlay}>
+             <View style={styles.detailCard}>
+                 <Text style={playerStyles.modalTitle}>Edit {selectedPlayer?.name}</Text>
+                 <Text style={{color: '#888', fontSize: 10, fontWeight: 'bold', marginBottom: 5}}>SQUARE COUNT</Text>
+                 <TextInput style={playerStyles.modalInput} placeholder="#" placeholderTextColor="#666" value={playerEditCount} onChangeText={setPlayerEditCount} keyboardType="numeric"/>
+                 <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 20, justifyContent: 'space-between'}}>
+                    <View style={{flex: 1}}><Text style={{color: '#fff', fontWeight: 'bold'}}>Re-roll Squares?</Text><Text style={{color: '#666', fontSize: 10}}>Clears current spots and picks random new ones.</Text></View>
+                    <Switch value={isReshuffle} onValueChange={setIsReshuffle} trackColor={{ false: "#333", true: THEME.primary }}/>
                  </View>
-                 <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
-                    <View style={{flex: 1, marginRight: 5}}>
-                        <Text style={styles.inputLabel}>Away Team</Text>
-                        <TextInput style={styles.modalInput} value={settingsTop} onChangeText={setSettingsTop} placeholder="Away" placeholderTextColor="#666" />
-                    </View>
-                    <View style={{flex: 1, marginLeft: 5}}>
-                        <Text style={styles.inputLabel}>Home Team</Text>
-                        <TextInput style={styles.modalInput} value={settingsLeft} onChangeText={setSettingsLeft} placeholder="Home" placeholderTextColor="#666" />
-                    </View>
+                 <Text style={{color: '#888', fontSize: 10, fontWeight: 'bold', marginBottom: 5}}>NOTE</Text>
+                 <TextInput style={playerStyles.modalInput} placeholder="Note" placeholderTextColor="#666" value={playerEditNote} onChangeText={setPlayerEditNote}/>
+                 <Button title="Save Changes" color={THEME.primary} onPress={handleSavePlayerChanges} />
+                 <View style={{height: 10}}/><Button title="Cancel" color="#666" onPress={() => setShowPlayerEditModal(false)} />
+                 <View style={{marginTop: 20, borderTopWidth: 1, borderColor: '#333', paddingTop: 10}}>
+                    <Button title="Delete Player" color={THEME.error} onPress={handleDeletePlayer} />
                  </View>
-                 <View style={{flexDirection: 'row', justifyContent: 'space-between'}}>
-                    <View style={{flex: 1, marginRight: 5}}>
-                        <Text style={styles.inputLabel}>Price ($)</Text>
-                        <TextInput style={styles.modalInput} value={settingsPrice} onChangeText={setSettingsPrice} placeholder="0" keyboardType="numeric" placeholderTextColor="#666" />
-                    </View>
-                    <View style={{flex: 1, marginLeft: 5}}>
-                        <Text style={styles.inputLabel}>Host Cut</Text>
-                        <TextInput style={styles.modalInput} value={settingsCut} onChangeText={setSettingsCut} placeholder="e.g. 50%" placeholderTextColor="#666" />
-                    </View>
-                 </View>
-                 <View style={{flexDirection: 'row', alignItems: 'center', marginBottom: 15}}>
-                    <Text style={{color: '#fff', marginRight: 10}}>Visibility:</Text>
-                    <TouchableOpacity onPress={() => setSettingsPublic(!settingsPublic)} style={{backgroundColor: settingsPublic ? THEME.primary : '#333', paddingVertical: 5, paddingHorizontal: 10, borderRadius: 5}}>
-                        <Text style={{color: '#fff', fontWeight: 'bold'}}>{settingsPublic ? "PUBLIC" : "PRIVATE"}</Text>
-                    </TouchableOpacity>
-                 </View>
-                 <Button title="Save Settings" color={THEME.primary} onPress={handleUpdateSettings} />
-                 <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
-                 <Text style={styles.sectionHeader}>Game Scores</Text>
-                 {['q1','q2','q3','final'].map(q => (
-                   <View key={q} style={styles.scoreRow}>
-                      <Text style={styles.scoreLabel}>{q.toUpperCase()}</Text>
-                      <TextInput value={(scores[q]?.top || '').toString()} onChangeText={(v) => updateScoreInput(q, 'top', v)} style={styles.smallScoreInput} keyboardType="numeric" placeholder="Away"/>
-                      <TextInput value={(scores[q]?.left || '').toString()} onChangeText={(v) => updateScoreInput(q, 'left', v)} style={styles.smallScoreInput} keyboardType="numeric" placeholder="Home"/>
-                   </View>
-                 ))}
-                 <Button title="Update Scores" color={THEME.accent} onPress={handleSaveScores} />
-                 <View style={{height: 20, borderBottomWidth: 1, borderColor: '#333', marginBottom: 20}}/>
-                 <Text style={styles.sectionHeader}>Grid Setup</Text>
-                 <TouchableOpacity style={styles.actionBtn} onPress={handleRandomizeNumbers}><Text style={styles.actionBtnText}>🎲 Randomize Numbers</Text></TouchableOpacity>
-                 <TouchableOpacity style={[styles.actionBtn, { marginTop: 10, borderColor: THEME.red }]} onPress={() => { if (Platform.OS === 'web') { if (window.confirm("Reset axis numbers to '?'")) handleClearNumbers(); } else { Alert.alert("Reset Numbers", "Set axis numbers back to '?'", [{ text: "Cancel", style: "cancel" }, { text: "Reset", style: "destructive", onPress: handleClearNumbers }]); } }}><Text style={[styles.actionBtnText, { color: THEME.red }]}>🚫 Clear Numbers</Text></TouchableOpacity>
-                 <View style={{height: 20}}/>
-                 <Button title="Log Out" color="#444" onPress={() => { signOut(auth); setShowAdminModal(false); }} />
-                 <View style={{height: 10}}/><Button title="Close Menu" color="#666" onPress={() => setShowAdminModal(false)} />
-              </ScrollView>
-            )}
-          </View>
-        </View>
+             </View>
+         </View>
       </Modal>
+
+      {/* 4. ADMIN MODAL IS REMOVED - Logic moved to Info Tab */}
+      
+      {/* 5. IMPORT REVIEW MODAL */}
+      <ImportReviewModal visible={importModalVisible} isLoading={isImporting} importedPlayers={scannedPlayers} onClose={() => setImportModalVisible(false)} onConfirm={confirmImport} />
 
     </SafeAreaView>
   );

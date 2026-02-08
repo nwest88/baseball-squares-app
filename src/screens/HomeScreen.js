@@ -200,7 +200,7 @@ export default function HomeScreen({ navigation }) {
             {user ? (
                <TouchableOpacity 
                  onPress={() => navigation.navigate('Profile')}
-                 style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.background, padding: 6, borderRadius: 20, borderWidth: 1, borderColor: THEME.border }}
+                 style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: THEME.colors.background, padding: 6, borderRadius: 20, borderWidth: 1, borderColor: THEME.border }}
                >
                  <Ionicons name="person-circle" size={24} color={THEME.primary} />
                  <Text style={{ marginLeft: 6, color: THEME.primary, fontWeight: 'bold', fontSize: 12, marginRight: 4 }}>PROFILE</Text>

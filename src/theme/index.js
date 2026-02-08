@@ -10,7 +10,7 @@ export const THEME = {
   gold: '#eab308',        // Darker Gold
   
   // Backgrounds
-  background: '#f8fafc',  // Light Blue-Grey
+  //background: '#f8fafc',  // Light Blue-Grey
   card: '#ffffff',        // Pure White
   overlay: 'rgba(15, 23, 42, 0.75)', // Navy fade
 
@@ -51,6 +51,8 @@ export const THEME = {
     secondary: '#3b82f6', 
     accent: '#0ea5e9',    
     background: '#f8fafc',
+    backgroundColor: '#f8fafc',
+    card: '#ffffff',
     surface: '#ffffff',   
     text: {
       primary: '#1e293b',

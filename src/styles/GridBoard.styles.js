@@ -1,20 +1,80 @@
-import { StyleSheet, Platform, StatusBar } from 'react-native';
+import { StyleSheet } from 'react-native';
 import { THEME } from '../theme/index';
 
 export const styles = StyleSheet.create({
-  container: { 
+  container: {
     flex: 1,
-    backgroundColor: THEME.background, paddingTop: Platform.OS === 'android' ? StatusBar.currentHeight : 0},
-  cornerCell: { justifyContent: 'center', alignItems: 'center', borderRightWidth: 1, borderBottomWidth: 1, borderColor: '#333' },
-  headerCell: { justifyContent: 'center', alignItems: 'center', backgroundColor: '#222', borderWidth: 1, borderColor: '#444' },
-  headerText: { color: THEME.gold, fontWeight: 'bold', fontSize: 16 },
-  highlightHeader: { backgroundColor: THEME.highlight, borderColor: THEME.gold },
-  highlightHeaderText: { color: THEME.gold },
-  cell: { justifyContent: 'center', alignItems: 'center', borderWidth: 0.5, borderColor: '#333' },
-  freeCell: { backgroundColor: THEME.background },
-  takenCell: { backgroundColor: THEME.card },
-  highlightCell: { backgroundColor: THEME.highlight },
-  winningCell: { backgroundColor: THEME.winnerBg, borderColor: '#fff', borderWidth: 2, zIndex: 10, transform: [{scale: 1.1}] },
-  cellText: { color: '#fff', fontSize: 12, fontWeight: 'bold' },
-  winningCellText: { color: '#000', fontWeight: '900', fontSize: 14 }
+    backgroundColor: THEME.colors.background, // Grid background often stays white/light for readability
+  },
+  
+  // --- Header Cells ---
+  cornerCell: {
+    backgroundColor: '#e0e0e0',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#ccc',
+  },
+  headerCell: {
+    backgroundColor: '#f2f2f2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#ccc',
+  },
+  headerText: {
+    fontWeight: 'bold',
+    fontSize: 16,
+    color: '#333',
+  },
+  
+  // --- Grid Cells ---
+  cell: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderRightWidth: 1,
+    borderBottomWidth: 1,
+    borderColor: '#ccc',
+  },
+  freeCell: {
+    backgroundColor: '#fff',
+  },
+  takenCell: {
+    backgroundColor: '#e6f7ff', // Keep light blue, or use a very light THEME.primary shade
+  },
+  cellText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#333',
+  },
+  
+  // --- Winner Highlights ---
+  highlightHeader: {
+    backgroundColor: '#ffecb3', 
+  },
+  highlightHeaderText: {
+    color: '#d32f2f', 
+    fontWeight: 'bold',
+  },
+  highlightCell: {
+    backgroundColor: '#fff9c4', 
+  },
+  winningCell: {
+    backgroundColor: '#ffeb3b', 
+    borderWidth: 2,
+    borderColor: '#fbc02d',
+  },
+  winningCellText: {
+    color: '#d32f2f',
+    fontSize: 18,
+  },
+
+  // --- Player Highlight ---
+  playerHighlight: {
+    borderWidth: 3,
+    borderColor: THEME.gold,
+    backgroundColor: 'rgba(255, 215, 0, 0.4)',
+  }
 });
