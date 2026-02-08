@@ -13,7 +13,7 @@ import ImportReviewModal from '../components/ImportReviewModal';
 // Styles & Theme
 import { styles } from '../styles/GameScreen.styles'; 
 import { styles as playerStyles } from '../styles/PlayerManager.styles'; 
-import { THEME } from '../theme/index';
+import { THEME } from '../theme';
 
 // Utils
 import { toggleFollowGame, isGameFollowed } from '../utils/storage';
@@ -38,6 +38,7 @@ export default function GameScreen({ route, navigation }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(""); 
   const [isFollowing, setIsFollowing] = useState(false);
+  const [isLoggingIn, setIsLoggingIn] = useState(false); // New state for login loading
 
   // --- TAB STATE ---
   const [activeTab, setActiveTab] = useState('squares'); // 'info' | 'squares' | 'players'
@@ -241,7 +242,7 @@ export default function GameScreen({ route, navigation }) {
   };
 
   const handleShare = async () => {
-    const url = `https://quiksquares.app/game/${gameId}`;
+    const url = `https://baseball-squares-mvp.web.app/game/${gameId}`;
     try { await Share.share({ message: `Join my Squares Pool!\nGame ID: ${gameId}\n\nPlay here: ${url}`, url, title: 'Squares Pool Invite' }); } catch (error) {}
   };
 
@@ -373,7 +374,39 @@ export default function GameScreen({ route, navigation }) {
 
 
   // --- GENERIC SETTINGS HANDLERS ---
-  const handleLogin = async () => { try { await signInWithEmailAndPassword(auth, email, password); setEmail(""); setPassword(""); } catch (e) { Alert.alert("Error", e.message); } };
+  const handleLogin = async () => { 
+      // 1. Validation check before trying to sign in
+      if (!email.trim() || !password.trim()) {
+          const msg = "Please enter both email and password.";
+          if (Platform.OS === 'web') window.alert(msg);
+          else Alert.alert("Validation Error", msg);
+          return;
+      }
+
+      setIsLoggingIn(true);
+      try { 
+          await signInWithEmailAndPassword(auth, email, password); 
+          setEmail(""); 
+          setPassword(""); 
+      } catch (e) { 
+          console.error("Login failed", e); // Log specific error to console for debug
+          
+          let friendlyMsg = e.message;
+          if (e.code === 'auth/invalid-email') friendlyMsg = "Invalid email address format.";
+          if (e.code === 'auth/user-not-found') friendlyMsg = "No user found with this email.";
+          if (e.code === 'auth/wrong-password') friendlyMsg = "Incorrect password.";
+          if (e.code === 'auth/invalid-credential') friendlyMsg = "Invalid credentials. Please try again.";
+
+          if (Platform.OS === 'web') {
+              window.alert("Login Error: " + friendlyMsg);
+          } else {
+              Alert.alert("Error", friendlyMsg); 
+          }
+      } finally {
+          setIsLoggingIn(false);
+      }
+  };
+  
   const handleUpdateSettings = async () => { try { await updateDoc(doc(db, "squares_pool", gameId), { name: settingsName, hostName: settingsHost, topTeam: settingsTop, leftTeam: settingsLeft, pricePerSquare: Number(settingsPrice) || 0, hostCut: settingsCut, isPublic: settingsPublic }); Alert.alert("Success", "Settings updated!"); } catch (e) { Alert.alert("Error", e.message); } };
   const handleSaveScores = async () => { try { await setDoc(doc(db, "squares_pool", gameId), { scores: scores }, { merge: true }); Alert.alert("Success", "Scores Updated"); } catch (e) { Alert.alert("Save Failed", e.message); } };
   const updateScoreInput = (q, team, val) => { setScores(prev => ({ ...prev, [q]: { ...(prev[q] || {}), [team]: val } })); };
@@ -518,6 +551,16 @@ export default function GameScreen({ route, navigation }) {
                     <Text style={[styles.actionBtnText, { color: THEME.red }]}>🚫 Clear Numbers</Text>
                  </TouchableOpacity>
                  
+                 <View style={{height: 20}}/>
+                 {/* SHARE BUTTON FOR ADMIN */}
+                 <TouchableOpacity 
+                    style={[styles.actionBtn, { backgroundColor: '#444', marginTop: 10, flexDirection: 'row', justifyContent: 'center' }]} 
+                    onPress={handleShare}
+                 >
+                    <Ionicons name="share-outline" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                    <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Share Game</Text>
+                 </TouchableOpacity>
+
                  <View style={{height: 50}}/>
                  <Button title="Log Out" color="#666" onPress={() => signOut(auth)} />
                  <View style={{height: 50}}/>
@@ -549,6 +592,30 @@ export default function GameScreen({ route, navigation }) {
                  payouts: payouts
              }}/>
              
+             {/* Follow Button Integrated Here */}
+             <View style={{ marginTop: 15, alignItems: 'center' }}>
+                <TouchableOpacity 
+                    style={[styles.actionBtn, { backgroundColor: isFollowing ? THEME.primary : '#333', width: '100%', flexDirection: 'row', justifyContent: 'center' }]} 
+                    onPress={handleToggleFollow}
+                >
+                    <Ionicons name={isFollowing ? "star" : "star-outline"} size={20} color={isFollowing ? "#FFF" : THEME.primary} style={{ marginRight: 8 }} />
+                    <Text style={{ color: isFollowing ? '#FFF' : THEME.primary, fontWeight: 'bold' }}>
+                        {isFollowing ? "Following Game" : "Follow Game"}
+                    </Text>
+                </TouchableOpacity>
+             </View>
+
+             {/* SHARE BUTTON FOR PLAYERS */}
+             <View style={{ marginTop: 10, alignItems: 'center' }}>
+                <TouchableOpacity 
+                    style={[styles.actionBtn, { backgroundColor: '#444', width: '100%', flexDirection: 'row', justifyContent: 'center' }]} 
+                    onPress={handleShare}
+                >
+                    <Ionicons name="share-outline" size={20} color="#FFF" style={{ marginRight: 8 }} />
+                    <Text style={{ color: '#FFF', fontWeight: 'bold' }}>Share Game</Text>
+                </TouchableOpacity>
+             </View>
+
              <View style={[styles.detailCard, {marginTop: 20}]}>
                  <Text style={styles.detailTitle}>🏆 Current Winners</Text>
                  {winners.map(w => (
@@ -565,7 +632,13 @@ export default function GameScreen({ route, navigation }) {
                      <Text style={{color: '#666', marginBottom: 10, textAlign: 'center'}}>Admin Login</Text>
                      <TextInput placeholder="Email" value={email} onChangeText={setEmail} style={[styles.modalInput, {marginBottom: 10}]} placeholderTextColor="#666" autoCapitalize="none"/>
                      <TextInput placeholder="Password" value={password} onChangeText={setPassword} style={[styles.modalInput, {marginBottom: 10}]} secureTextEntry placeholderTextColor="#666"/>
-                     <Button title="Login" color={THEME.accent} onPress={handleLogin} />
+                     <View style={{ marginTop: 10 }}>
+                        {isLoggingIn ? (
+                            <ActivityIndicator size="small" color={THEME.primary} />
+                        ) : (
+                            <Button title="Login" color={THEME.accent} onPress={handleLogin} />
+                        )}
+                     </View>
                  </View>
              )}
              
@@ -638,11 +711,15 @@ export default function GameScreen({ route, navigation }) {
                 <TextInput style={[playerStyles.input, {flex: 2}]} placeholder="Name" placeholderTextColor="#666" value={pmName} onChangeText={setPmName} editable={!stats.isFull}/>
                 <TextInput style={[playerStyles.input, {flex: 1, marginLeft: 10}]} placeholder="#" placeholderTextColor="#666" keyboardType="numeric" value={pmCount} onChangeText={setPmCount} editable={!stats.isFull}/>
             </View>
+            {/* Added Note Input */}
+            <View style={[playerStyles.row, { marginTop: 10 }]}>
+                <TextInput style={[playerStyles.input, { flex: 1 }]} placeholder="Note (e.g. Paid)" placeholderTextColor="#666" value={pmNote} onChangeText={setPmNote} editable={!stats.isFull}/>
+            </View>
             <TouchableOpacity style={[playerStyles.addBtn, stats.isFull && playerStyles.disabledBtn]} onPress={handleAutoAssign} disabled={stats.isFull}>
                 <Text style={playerStyles.addBtnText}>{stats.isFull ? "FULL" : "Assign"}</Text>
             </TouchableOpacity>
             {!stats.isFull && (
-                <TouchableOpacity style={[playerStyles.addBtn, { backgroundColor: THEME.colors.secondary, marginTop: 8 }]} onPress={startImport}>
+                <TouchableOpacity style={[playerStyles.addBtn, { backgroundColor: THEME.secondary, marginTop: 8 }]} onPress={startImport}>
                 <Text style={playerStyles.addBtnText}>📷 Scan List</Text>
                 </TouchableOpacity>
             )}
@@ -655,24 +732,27 @@ export default function GameScreen({ route, navigation }) {
             keyExtractor={item => item.name}
             contentContainerStyle={{paddingBottom: 100, paddingHorizontal: 15}}
             renderItem={({item}) => (
-                <TouchableOpacity 
-                    style={[playerStyles.playerRow, {alignItems: 'center'}]}
-                    onPress={() => openPlayerEditModal(item)}
-                    disabled={!isAdmin}
-                >
-                    <View style={playerStyles.avatar}>
-                        <Text style={playerStyles.avatarText}>{item.name.substring(0,2).toUpperCase()}</Text>
-                    </View>
-                    <View style={{flex: 1}}>
-                        <Text style={playerStyles.playerName}>{item.name}</Text>
-                        <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                            <View style={playerStyles.badge}><Text style={playerStyles.badgeText}>{item.count}</Text></View>
-                            {item.note ? <Text style={[playerStyles.playerNote, {marginLeft: 5}]}>{item.note}</Text> : null}
+                <View style={[playerStyles.playerRow, {alignItems: 'center', flexDirection: 'row'}]}>
+                    {/* LEFT SIDE - CLICK TO EDIT */}
+                    <TouchableOpacity 
+                        style={{flex: 1, flexDirection: 'row', alignItems: 'center'}}
+                        onPress={() => openPlayerEditModal(item)}
+                        disabled={!isAdmin}
+                    >
+                        <View style={playerStyles.avatar}>
+                            <Text style={playerStyles.avatarText}>{item.name.substring(0,2).toUpperCase()}</Text>
                         </View>
-                    </View>
+                        <View style={{flex: 1}}>
+                            <Text style={playerStyles.playerName}>{item.name}</Text>
+                            <View style={{flexDirection: 'row', alignItems: 'center'}}>
+                                <View style={playerStyles.badge}><Text style={playerStyles.badgeText}>{item.count}</Text></View>
+                                {item.note ? <Text style={[playerStyles.playerNote, {marginLeft: 5}]}>{item.note}</Text> : null}
+                            </View>
+                        </View>
+                    </TouchableOpacity>
                     
-                    {/* HIGHLIGHT TOGGLE - Visible to all users */}
-                    <View style={{alignItems: 'center', marginLeft: 10}}>
+                    {/* RIGHT SIDE - TOGGLE ONLY - NO EDIT TRIGGER */}
+                    <View style={{alignItems: 'center', marginLeft: 10, width: 50}}>
                         <Text style={{color: '#666', fontSize: 8, marginBottom: 2}}>SHOW</Text>
                         <Switch 
                             value={highlightedPlayers.includes(item.name)} 
@@ -681,7 +761,7 @@ export default function GameScreen({ route, navigation }) {
                             thumbColor={highlightedPlayers.includes(item.name) ? "#FFF" : "#f4f3f4"}
                         />
                     </View>
-                </TouchableOpacity>
+                </View>
             )}
         />
     </KeyboardAvoidingView>
@@ -715,17 +795,17 @@ export default function GameScreen({ route, navigation }) {
       </View>
 
       {/* MAIN TABS */}
-      <View style={{flexDirection: 'row', backgroundColor: THEME.colors.background, borderBottomWidth: 1, borderColor: THEME.colors.border}}>
+      <View style={{flexDirection: 'row', backgroundColor: '#111', borderBottomWidth: 1, borderColor: '#333'}}>
          {['Info', 'Squares', 'Players'].map(t => {
              const key = t.toLowerCase();
              const isActive = activeTab === key;
              return (
                  <TouchableOpacity 
                     key={key} 
-                    style={{flex: 1, paddingVertical: 12, borderBottomWidth: 3, borderColor: isActive ? THEME.colors.card : 'transparent'}}
+                    style={{flex: 1, paddingVertical: 12, borderBottomWidth: 3, borderColor: isActive ? THEME.primary : 'transparent'}}
                     onPress={() => setActiveTab(key)}
                  >
-                     <Text style={{color: isActive ? THEME.colors.text.primary : THEME.colors.text.inverse, textAlign: 'center', fontWeight: 'bold'}}>{t}</Text>
+                     <Text style={{color: isActive ? '#FFF' : '#666', textAlign: 'center', fontWeight: 'bold'}}>{t}</Text>
                  </TouchableOpacity>
              );
          })}
@@ -739,15 +819,9 @@ export default function GameScreen({ route, navigation }) {
       </View>
 
       {/* FLOATING ACTION BUTTONS */}
-      {/* Admin FAB removed since controls are now in Info tab, keeping share/follow */}
+      {/* Share FAB removed - Moved to Info Tab */}
       
-      <TouchableOpacity style={styles.fabRight} onPress={handleShare}>
-        <Text style={{fontSize: 20}}>📤</Text>
-      </TouchableOpacity>
-      
-      <TouchableOpacity style={[styles.fabAbove, {backgroundColor: isFollowing ? THEME.colors.primary : THEME.colors.card}]} onPress={handleToggleFollow}>
-        <Ionicons name={isFollowing ? "star" : "star-outline"} size={24} color={isFollowing ? THEME.colors.card : THEME.colors.primary} />
-      </TouchableOpacity>
+      {/* Follow FAB removed - Moved to Info Tab */}
 
 
       {/* --- MODALS (Admin Modal removed - functionality moved to Info Tab) --- */}

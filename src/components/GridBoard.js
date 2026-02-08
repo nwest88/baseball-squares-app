@@ -113,9 +113,9 @@ export default function GridBoard({
                           styles.cell,
                           {width: CELL_SIZE, height: CELL_SIZE},
                           owner ? styles.takenCell : styles.freeCell,
+                          isHighlighted && styles.playerHighlight,
                           (isWinningRow || isWinningCol) && styles.highlightCell,
-                          isWinner && styles.winningCell,
-                          isHighlighted && styles.playerHighlight
+                          isWinner && styles.winningCell
                         ]}
                       >
                         <Text style={[styles.cellText, isWinner && styles.winningCellText]}>

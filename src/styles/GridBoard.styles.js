@@ -42,7 +42,7 @@ export const styles = StyleSheet.create({
     backgroundColor: '#fff',
   },
   takenCell: {
-    backgroundColor: '#e6f7ff', // Keep light blue, or use a very light THEME.primary shade
+    backgroundColor: '#d1e0e74d', // Keep light blue, or use a very light THEME.primary shade
   },
   cellText: {
     fontSize: 14,
@@ -52,29 +52,29 @@ export const styles = StyleSheet.create({
   
   // --- Winner Highlights ---
   highlightHeader: {
-    backgroundColor: '#ffecb3', 
+    backgroundColor: '#e9f086', 
   },
   highlightHeaderText: {
-    color: '#d32f2f', 
+    color: '#000000', 
     fontWeight: 'bold',
   },
   highlightCell: {
-    backgroundColor: '#fff9c4', 
+    backgroundColor: '#fffec4', 
   },
   winningCell: {
-    backgroundColor: '#ffeb3b', 
+    backgroundColor: '#e1e428', 
     borderWidth: 2,
-    borderColor: '#fbc02d',
+    borderColor: '#f3f73c',
   },
   winningCellText: {
-    color: '#d32f2f',
+    color: THEME.colors.primary,
     fontSize: 18,
   },
 
   // --- Player Highlight ---
   playerHighlight: {
     borderWidth: 3,
-    borderColor: THEME.gold,
-    backgroundColor: 'rgba(255, 215, 0, 0.4)',
+    borderColor: THEME.colors.secondary,
+    backgroundColor: THEME.colors.highlight, // Subtle background change to indicate highlight
   }
 });

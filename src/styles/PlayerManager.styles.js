@@ -27,20 +27,20 @@ export const styles = StyleSheet.create({
   },
   progressBarBg: {
     height: 6,
-    backgroundColor: '#333',
+    backgroundColor: THEME.colors.primary, 
     borderRadius: 3,
     marginTop: 5,
     overflow: 'hidden',
   },
   progressBarFill: {
     height: '100%',
-    backgroundColor: THEME.primary,
+    backgroundColor: THEME.colors.secondary,
     borderRadius: 3,
   },
 
   // --- Form / Add Player Section ---
   formCard: {
-    backgroundColor: THEME.cardLight, // Slightly lighter than card background
+    backgroundColor: THEME.colors.cardLight, // Slightly lighter than card background
     padding: 15,
     margin: 15,
     borderRadius: 8,
@@ -52,16 +52,16 @@ export const styles = StyleSheet.create({
     alignItems: 'center',
   },
   input: {
-    backgroundColor: 'THEME.input', // Consider adding an input background color to theme
-    color: THEME.text,
+    backgroundColor: THEME.colors.input, // Consider adding an input background color to theme
+    color: THEME.colors.text,
     padding: 12,
     borderRadius: 5,
     fontSize: 16,
     borderWidth: 1,
-    borderColor: 'THEME.border',
+    borderColor: THEME.colors.border,
   },
   addBtn: {
-    backgroundColor: THEME.primary,
+    backgroundColor: THEME.colors.primary,
     padding: 12,
     borderRadius: 5,
     alignItems: 'center',
@@ -81,44 +81,45 @@ export const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderColor: '#222',
+    borderColor: THEME.colors.border,
+    backgroundColor: THEME.colors.card, // Keep player rows consistent with card background
     alignItems: 'center',
   },
   avatar: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: '#333',
+    backgroundColor: THEME.colors.secondary,
     justifyContent: 'center',
     alignItems: 'center',
     marginRight: 10,
     borderWidth: 1,
-    borderColor: '#444',
+    borderColor: THEME.colors.border,
   },
   avatarText: {
-    color: THEME.text,
+    color: THEME.colors.text,
     fontWeight: 'bold',
     fontSize: 16,
   },
   playerName: {
-    color: THEME.text,
+    color: THEME.colors.text,
     fontSize: 16,
     fontWeight: 'bold',
   },
   badge: {
-    backgroundColor: '#333',
+    backgroundColor: THEME.colors.cardLight,
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 4,
     marginRight: 5,
   },
   badgeText: {
-    color: THEME.text,
+    color: THEME.colors.text,
     fontSize: 12,
     fontWeight: 'bold',
   },
   playerNote: {
-    color: '#888',
+    color: THEME.colors.text,
     fontSize: 12,
     fontStyle: 'italic',
   },

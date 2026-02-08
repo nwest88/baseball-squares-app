@@ -53,7 +53,8 @@ export const THEME = {
     background: '#f8fafc',
     backgroundColor: '#f8fafc',
     card: '#ffffff',
-    surface: '#ffffff',   
+    surface: '#ffffff', 
+    input: '#ffffff',  
     text: {
       primary: '#1e293b',
       secondary: '#64748b',

@@ -59,7 +59,7 @@ export const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   qTabActive: {
-    backgroundColor: THEME.colors.primary,
+    backgroundColor: THEME.colors.secondary,
     borderColor: THEME.colors.border,
   },
   qTabText: {
@@ -164,7 +164,7 @@ export const styles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: THEME.colors.border,
-    shadowColor: THEME.colors.shadow.shadowColor,
+    shadowColor: THEME.shadows.default,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.5,
     shadowRadius: 8,
@@ -261,7 +261,7 @@ export const styles = StyleSheet.create({
     fontWeight: 'bold',
   },
   smallScoreInput: {
-    backgroundColor: '#333',
+    backgroundColor: '#5c5959',
     color: '#fff',
     width: 60,
     padding: 8,
