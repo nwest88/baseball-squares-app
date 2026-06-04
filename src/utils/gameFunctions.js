@@ -1,4 +1,5 @@
 import { doc, updateDoc, deleteField } from 'firebase/firestore';
+import { shuffle } from './shuffle';
 
 /**
  * Scans the grid and removes all squares owned by a specific player.
@@ -82,7 +83,7 @@ export const updatePlayerAllocation = async (db, gameId, gridData, player, newCo
         }
 
         // C. Pick new random spots from the pool
-        const shuffled = availablePool.sort(() => 0.5 - Math.random());
+        const shuffled = shuffle(availablePool);
         const selected = shuffled.slice(0, targetCount);
         
         // D. Assign new spots
@@ -98,14 +99,14 @@ export const updatePlayerAllocation = async (db, gameId, gridData, player, newCo
             if (emptySquares.length < diff) {
                 throw new Error(`Only ${emptySquares.length} squares available.`);
             }
-            const shuffled = emptySquares.sort(() => 0.5 - Math.random());
+            const shuffled = shuffle(emptySquares);
             const selected = shuffled.slice(0, diff);
             const playerData = { name: playerName, email: player.email || "", note: player.note || "" };
             selected.forEach(key => updates[key] = playerData);
         } else if (diff < 0) {
             // REMOVING SQUARES
             const removeCount = Math.abs(diff);
-            const shuffled = playerSquares.sort(() => 0.5 - Math.random());
+            const shuffled = shuffle(playerSquares);
             const toRemove = shuffled.slice(0, removeCount);
             toRemove.forEach(key => updates[key] = deleteField());
         }

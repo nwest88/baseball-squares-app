@@ -11,6 +11,7 @@ import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
 // 1. IMPORT STORAGE UTILS
 import { toggleFollowGame, isGameFollowed } from '../utils/storage';
+import { shuffle } from '../utils/shuffle';
 
 const DEFAULT_SCORES = {
   q1: { top: '', left: '' },
@@ -182,7 +183,7 @@ export default function GameScreen({ route, navigation }) {
       const rows = gridData.gridRows || 10;
       const generateShuffled = (size) => {
           const arr = Array.from({ length: size }, (_, i) => i);
-          return arr.sort(() => Math.random() - 0.5);
+          return shuffle(arr);
       };
       try {
           await updateDoc(doc(db, "squares_pool", gameId), {
