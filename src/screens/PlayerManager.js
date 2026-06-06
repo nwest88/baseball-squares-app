@@ -7,6 +7,7 @@ import { THEME } from '../theme';
 import BrandHeader from '../components/BrandHeader';
 import { styles } from '../styles/PlayerManager.styles';
 import { deletePlayerFromGrid, updatePlayerAllocation } from '../utils/gameFunctions';
+import { shuffle } from '../utils/shuffle';
 
 // --- AI IMPORTS ---
 import { pickAndProcessImage } from '../services/ImageImportService';
@@ -136,7 +137,7 @@ export default function PlayerManager({ route, navigation }) {
       }
     }
 
-    const shuffled = emptyKeys.sort(() => 0.5 - Math.random());
+    const shuffled = shuffle(emptyKeys);
     const selected = shuffled.slice(0, numSquares);
     const updateObj = {};
     const playerData = { name, email: "", note: note }; 
@@ -185,7 +186,7 @@ export default function PlayerManager({ route, navigation }) {
       }
     }
 
-    const shuffledAvailable = emptyKeys.sort(() => 0.5 - Math.random());
+    const shuffledAvailable = shuffle(emptyKeys);
     
     let currentIndex = 0;
     const updateObj = {};
