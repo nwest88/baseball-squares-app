@@ -1,6 +1,21 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, ScrollView, TouchableOpacity } from 'react-native';
 import { styles } from '../styles/GridBoard.styles'; // <--- 1. Use Shared Styles
+
+const getInitials = (ownerData) => {
+  if (!ownerData) return "";
+  // Check if it's an object (New Format) or String (Old Format)
+  const name = (typeof ownerData === 'object' && ownerData !== null)
+               ? ownerData.name
+               : ownerData;
+
+  if (!name) return "";
+
+  const parts = name.trim().split(" ");
+  return parts.length > 1
+    ? (parts[0][0] + parts[1][0]).toUpperCase()
+    : name.substring(0, 2).toUpperCase();
+};
 
 export default function GridBoard({ 
   gridData = {},    
@@ -22,20 +37,16 @@ export default function GridBoard({
   
   const CELL_SIZE = baseSize;
 
-  const getInitials = (ownerData) => {
-    if (!ownerData) return "";
-    // Check if it's an object (New Format) or String (Old Format)
-    const name = (typeof ownerData === 'object' && ownerData !== null) 
-                 ? ownerData.name 
-                 : ownerData;
-
-    if (!name) return "";
-    
-    const parts = name.trim().split(" ");
-    return parts.length > 1 
-      ? (parts[0][0] + parts[1][0]).toUpperCase() 
-      : name.substring(0, 2).toUpperCase();
-  };
+  const memoizedInitials = useMemo(() => {
+    const initialsMap = {};
+    Object.keys(gridData).forEach(key => {
+      // Only process keys that follow the 'row-col' pattern
+      if (/^\d+-\d+$/.test(key)) {
+        initialsMap[key] = getInitials(gridData[key]);
+      }
+    });
+    return initialsMap;
+  }, [gridData]);
 
   const colIndices = Array.from({ length: colCount }, (_, i) => i);
   const rowIndices = Array.from({ length: rowCount }, (_, i) => i);
@@ -99,7 +110,7 @@ export default function GridBoard({
                   {colIndices.map((c) => {
                     const key = `${r}-${c}`;
                     const owner = gridData[key];
-                    const initials = getInitials(owner);
+                    const initials = memoizedInitials[key] || "";
                     const isWinningRow = winningLoc && winningLoc.row === r;
                     const isWinningCol = winningLoc && winningLoc.col === c;
                     const isWinner = isWinningRow && isWinningCol;
