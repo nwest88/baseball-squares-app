@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { Modal, View, Text, StyleSheet, FlatList, TouchableOpacity, ActivityIndicator } from 'react-native';
-// FIX 1: Import THEME (correct name) instead of theme
 import { THEME } from '../theme';
 
 export default function ImportReviewModal({ visible, onClose, onConfirm, importedPlayers, isLoading }) {
@@ -16,7 +15,6 @@ export default function ImportReviewModal({ visible, onClose, onConfirm, importe
           
           {isLoading ? (
             <View style={styles.loadingContainer}>
-              {/* FIX 2: Use THEME.primary directly */}
               <ActivityIndicator size="large" color={THEME.primary} />
               <Text style={styles.loadingText}>Analyzing Image...</Text>
             </View>
@@ -103,7 +101,7 @@ const styles = StyleSheet.create({
     fontWeight: '500',
   },
   badge: {
-    backgroundColor: THEME.primary, // FIX 2: Correct Usage
+    backgroundColor: THEME.primary,
     borderRadius: 12,
     paddingHorizontal: 10,
     paddingVertical: 4,
@@ -128,7 +126,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f5f5f5',
   },
   confirmButton: {
-    backgroundColor: THEME.secondary, // FIX 2: Correct Usage
+    backgroundColor: THEME.secondary,
   },
   cancelText: {
     color: '#666',
