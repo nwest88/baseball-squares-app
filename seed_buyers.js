@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { initializeApp } = require("firebase/app");
 const { getFirestore, doc, writeBatch } = require("firebase/firestore");
 const { getAuth, signInWithEmailAndPassword } = require("firebase/auth");
@@ -18,9 +19,15 @@ const db = getFirestore(app);
 const auth = getAuth(app);
 
 // 2. ADMIN CREDENTIALS
-// Ensure these match the user you created in Firebase Console
-const ADMIN_EMAIL = "admin@squares.com"; 
-const ADMIN_PASS = "SuperBowl2026!";    
+// Load from environment variables
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL;
+const ADMIN_PASS = process.env.ADMIN_PASSWORD;
+
+if (!ADMIN_EMAIL || !ADMIN_PASS) {
+  console.error("❌ ERROR: Missing ADMIN_EMAIL or ADMIN_PASSWORD in environment variables.");
+  console.error("Please configure them (e.g., in a .env file) before running this script.");
+  process.exit(1);
+}
 
 // 3. THE REAL DATA (From your 'Supporters.csv')
 const buyers = [
@@ -92,7 +99,7 @@ async function seed() {
   
   try {
     // A. LOGIN FIRST
-    await signInWithEmailAndPassword(auth, "Nicalaus.west@gmail.com", "SuperBowl2026!");
+    await signInWithEmailAndPassword(auth, ADMIN_EMAIL, ADMIN_PASS);
     console.log("✅ Logged in!");
 
     // B. UPLOAD DATA
